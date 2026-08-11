@@ -207,13 +207,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   width: 16px; height: 16px; font-size: 10px; font-weight: 700; border-radius: 3px; flex: none;
 }
 .badge-h { background: #6366f133; color: #a5a8ff; }
-/* 分组字母标题(A/M/C) */
-#conflict-title, #staged-title, #unstaged-title {
-  font-weight: 700; font-size: 12px; font-family: var(--mono); letter-spacing: .5px;
+/* 状态字母徽标(A/M/C):右侧分组标题与侧栏计数共用,保持一致 */
+.ch-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 3px;
+  font-size: 10px; font-weight: 700; font-family: var(--mono); border-radius: 3px; flex: none;
 }
-#conflict-title { color: var(--red); }
-#staged-title { color: var(--green); }
-#unstaged-title { color: var(--yellow); }
+.ch-a { background: #89d18533; color: var(--green); }
+.ch-m { background: #dcdcaa33; color: var(--yellow); }
+.ch-c { background: #f4877133; color: var(--red); }
+.repo-meta .ch-badge { margin-right: 1px; }
 
 .file-list { list-style: none; }
 .file-list:empty { display: none; }

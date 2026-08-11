@@ -161,13 +161,13 @@ function renderRepoList() {
     info.appendChild(name);
     const meta = document.createElement("div");
     meta.className = "repo-meta";
-    // 不显示分支名;计数用字母 A/M/C 表示
+    // 不显示分支名;计数用字母徽标 A/M/C + 数字(与右侧面板同款样式)
     let html = r.is_repo ? "" : "不是 Git 仓库";
-    if (r.conflicts) html += ` C${r.conflicts}`;
-    if (r.staged) html += ` A${r.staged}`;
-    if (r.unstaged) html += ` M${r.unstaged}`;
+    if (r.conflicts) html += ` <span class="ch-badge ch-c">C</span>${r.conflicts}`;
+    if (r.staged) html += ` <span class="ch-badge ch-a">A</span>${r.staged}`;
+    if (r.unstaged) html += ` <span class="ch-badge ch-m">M</span>${r.unstaged}`;
     if (r.ahead || r.behind) html += ` ⇡${r.ahead}⇣${r.behind}`;
-    meta.textContent = html.trim();
+    meta.innerHTML = html.trim();
     info.append(name, meta);
 
     li.append(ic, info);
