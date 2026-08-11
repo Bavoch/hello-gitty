@@ -7,8 +7,8 @@
   --text: #cccccc;
   --text-dim: #8a8a8a;
   --text-head: #bbbbbb;
-  --accent: #3794ff;
-  --accent-hover: #4da3ff;
+  --accent: #6366f1;   /* 与 logo 渐变的 indigo-500 一致 */
+  --accent-hover: #7a6df6; /* indigo → violet 过渡 */
   --green: #89d185;
   --red: #f48771;
   --yellow: #dcdcaa;
@@ -58,7 +58,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
 .icon-btn.active { color: var(--accent); }
-.icon-btn.active:hover { color: var(--accent); background: #3794ff1a; }
+.icon-btn.active:hover { color: var(--accent); background: #6366f11a; }
 
 /* ===== 工具栏 ===== */
 #toolbar {
@@ -96,7 +96,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: flex; flex-direction: column; gap: 3px;
 }
 .repo-item:hover { background: var(--hover); }
-.repo-item.active { border-left-color: var(--accent); background: #3794ff1a; }
+.repo-item.active { border-left-color: var(--accent); background: #6366f11a; }
 .repo-item-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .repo-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-dim); }
 .repo-dot.clean { background: var(--green); }
