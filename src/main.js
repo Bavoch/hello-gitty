@@ -747,5 +747,5 @@ function toast(msg, ok) {
   t.className = ok ? "ok" : "err";
   t.classList.remove("hidden");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.add("hidden"), 4000);
+  toastTimer = setTimeout(() => t.classList.add("hidden"), 2000);
 }
