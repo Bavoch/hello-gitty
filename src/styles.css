@@ -225,6 +225,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
   padding: 0 8px 2px;
 }
+/* 两侧相同的提交:单格横贯两列 */
+.history-row.synced .h-cell { grid-column: 1 / -1; }
 .h-cell {
   display: flex; align-items: center; gap: 5px; min-width: 0;
   padding: 3px 6px; border-radius: 4px;

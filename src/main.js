@@ -223,11 +223,16 @@ async function renderHistory() {
   ul.className = "history-grid";
   for (const row of rows) {
     const li = document.createElement("li");
-    li.className = "history-row"
-      + (row.left && !row.right ? " only-local"
-        : (!row.left && row.right ? " only-remote" : ""));
-    li.appendChild(cell(row.left, h.head));
-    li.appendChild(cell(row.right, null));
+    if (row.left && row.right) {
+      // 同一提交(两侧都有):单格横贯两列
+      li.className = "history-row synced";
+      li.appendChild(cell(row.left, h.head));
+    } else {
+      li.className = "history-row"
+        + (row.left ? " only-local" : " only-remote");
+      li.appendChild(cell(row.left, h.head));
+      li.appendChild(cell(row.right, null));
+    }
     ul.appendChild(li);
   }
   box.appendChild(ul);
