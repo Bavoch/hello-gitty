@@ -190,85 +190,108 @@ async function refresh() {
   await loadRepos(); // 同步侧栏状态徽标
 }
 
-/* ===== 历史 ===== */
+/* ===== 历史(本地/远程并排) ===== */
 async function renderHistory() {
   const h = await invoke("git_history", { repo });
   const box = $("history-container");
   box.innerHTML = "";
   $("history-count").textContent = h.commits.length;
 
-  // 本地组
-  box.appendChild(groupTitle("本地 · " + (h.branch || "(无分支)")));
-  box.appendChild(buildHistoryList(h.commits, h.head));
+  // 两列标题
+  const cols = document.createElement("div");
+  cols.className = "history-cols";
+  const lt = document.createElement("div");
+  lt.className = "history-col-title";
+  lt.textContent = "本地 · " + (h.branch || "(无分支)");
+  const rt = document.createElement("div");
+  rt.className = "history-col-title remote";
+  rt.textContent = h.remote ? h.remote.name : "无远程";
+  cols.append(lt, rt);
+  box.appendChild(cols);
 
-  // 远程组(上游分支)
-  if (h.remote && h.remote.commits.length) {
-    box.appendChild(groupTitle(h.remote.name, true));
-    box.appendChild(buildHistoryList(h.remote.commits, null));
-  } else {
+  // 拉链合并:同一提交同排;仅单侧存在的独占一行
+  const remote = h.remote ? h.remote.commits : [];
+  const rows = mergeRows(h.commits, remote);
+  if (!rows.length) {
     const none = document.createElement("div");
     none.className = "history-none";
-    none.textContent = "无远程分支(未设置上游)";
+    none.textContent = "暂无提交";
     box.appendChild(none);
+    return;
   }
-}
-
-function groupTitle(text, remote) {
-  const t = document.createElement("div");
-  t.className = "history-group-title" + (remote ? " remote" : "");
-  t.textContent = text;
-  return t;
-}
-
-function buildHistoryList(commits, headHash) {
   const ul = document.createElement("ul");
-  ul.className = "history-list";
-  for (const c of commits) {
-    const isHead = headHash && c.hash === headHash;
+  ul.className = "history-grid";
+  for (const row of rows) {
     const li = document.createElement("li");
-    li.className = "history-item" + (isHead ? " is-head" : "");
-    li.title = c.hash + " · " + c.author;
-
-    const hash = document.createElement("span");
-    hash.className = "h-hash";
-    hash.textContent = c.short;
-    li.appendChild(hash);
-
-    if (isHead) {
-      const tag = document.createElement("span");
-      tag.className = "h-head-tag";
-      tag.textContent = "HEAD";
-      li.appendChild(tag);
-    }
-
-    const msg = document.createElement("span");
-    msg.className = "h-msg";
-    msg.textContent = c.subject;
-    msg.title = c.subject;
-    li.appendChild(msg);
-
-    const time = document.createElement("span");
-    time.className = "h-time";
-    time.textContent = relTime(c.timestamp);
-    li.appendChild(time);
-
-    const actions = document.createElement("span");
-    actions.className = "row-actions";
-    const rb = document.createElement("button");
-    rb.className = "rollback";
-    rb.textContent = "强制回退";
-    rb.disabled = isHead;
-    rb.title = isHead ? "当前 HEAD" : "强制回退到此版本(丢弃之后所有提交)";
-    rb.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      askReset(c.hash, c.short);
-    });
-    actions.appendChild(rb);
-    li.appendChild(actions);
-
+    li.className = "history-row"
+      + (row.left && !row.right ? " only-local"
+        : (!row.left && row.right ? " only-remote" : ""));
+    li.appendChild(cell(row.left, h.head));
+    li.appendChild(cell(row.right, null));
     ul.appendChild(li);
   }
-  return ul;
+  box.appendChild(ul);
+}
+
+function cell(c, headHash) {
+  const div = document.createElement("div");
+  if (!c) {
+    div.className = "h-cell empty";
+    return div;
+  }
+  div.className = "h-cell";
+  div.title = `${c.hash} · ${c.author} · ${relTime(c.timestamp)} · ${c.subject}`;
+  const isHead = headHash && c.hash === headHash;
+
+  const hash = document.createElement("span");
+  hash.className = "h-hash" + (isHead ? " is-head" : "");
+  hash.textContent = c.short;
+  div.appendChild(hash);
+
+  if (isHead) {
+    const tag = document.createElement("span");
+    tag.className = "h-head-tag";
+    tag.textContent = "HEAD";
+    div.appendChild(tag);
+  }
+
+  const msg = document.createElement("span");
+  msg.className = "h-msg";
+  msg.textContent = c.subject;
+  div.appendChild(msg);
+
+  const rb = document.createElement("button");
+  rb.className = "rollback";
+  rb.textContent = "回退";
+  rb.disabled = isHead;
+  rb.title = isHead ? "当前 HEAD" : "强制回退到此版本(丢弃之后所有提交)";
+  rb.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    askReset(c.hash, c.short);
+  });
+  div.appendChild(rb);
+  return div;
+}
+
+// 按 hash/时间戳拉链合并两侧历史,同一提交精确对齐同一行
+function mergeRows(local, remote) {
+  const rows = [];
+  let i = 0, j = 0;
+  while (i < local.length || j < remote.length) {
+    const l = i < local.length ? local[i] : null;
+    const r = j < remote.length ? remote[j] : null;
+    if (l && r && l.hash === r.hash) {
+      rows.push({ left: l, right: r });
+      i++; j++;
+    } else if (l && (!r || l.timestamp >= r.timestamp)) {
+      rows.push({ left: l, right: null });
+      i++;
+    } else if (r) {
+      rows.push({ left: null, right: r });
+      j++;
+    }
+  }
+  return rows;
 }
 
 function relTime(ts) {
