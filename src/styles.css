@@ -252,9 +252,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .rollback {
   font-size: 10px; color: var(--red); flex: none;
   padding: 1px 5px; border-radius: 3px;
+  visibility: hidden; /* 悬停才显示,保持布局不跳动 */
 }
+.h-cell:hover .rollback { visibility: visible; }
 .rollback:hover { background: #f4877133; }
-.rollback:disabled { opacity: .4; cursor: default; }
+.rollback:disabled { visibility: hidden; }
 .history-none { padding: 4px 12px 8px 34px; font-size: 11px; color: var(--text-dim); }
 .mono { font-family: var(--mono); color: var(--accent); }
 
