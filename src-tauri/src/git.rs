@@ -14,26 +14,7 @@ pub struct FileEntry {
     pub conflict: bool,
 }
 
-impl FileEntry {
-    fn status_label(&self) -> &str {
-        if self.conflict {
-            return "C";
-        }
-        if self.untracked {
-            return "U";
-        }
-        match (self.x.as_str(), self.y.as_str()) {
-            ("A", _) => "A",
-            ("D", _) => "D",
-            ("R", _) => "R",
-            ("C", _) => "C",
-            ("M", _) => "M",
-            (_, "D") => "D",
-            (_, "M") => "M",
-            _ => "M",
-        }
-    }
-}
+impl FileEntry {}
 
 #[derive(Serialize, Clone, Default)]
 pub struct RepoStatus {
@@ -92,17 +73,19 @@ fn git_stdin(repo: &str, args: &[&str], input: &str) -> Result<String, String> {
     Ok(stdout)
 }
 
-/// 解析 porcelain v2 输出,支持 C 风格引号路径(含八进制转义)
+/// 解析 porcelain v2 输出,支持 C 风格引号路径(含八进制转义)。
+/// 八进制转义是 UTF-8 的原始字节(如 带 = \345\270\246),须先按字节收集再整体解码。
 fn unquote(s: &str) -> String {
     if !s.starts_with('"') {
         return s.to_string();
     }
     let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 1;
+    // 处理到倒数第二个字节,最后一个字节是闭合引号
     while i < bytes.len() - 1 {
         let b = bytes[i];
-        if b == b'\\' && i + 1 < bytes.len() - 1 {
+        if b == b'\\' {
             let n = bytes[i + 1];
             match n {
                 b'"' => out.push(b'"'),
@@ -119,10 +102,7 @@ fn unquote(s: &str) -> String {
                             k += 1;
                         }
                     }
-                    if let Some(c) = char::from_u32(val) {
-                        let mut buf = [0u8; 4];
-                        out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
-                    }
+                    out.push(val as u8);
                     i = k;
                     continue;
                 }
@@ -206,17 +186,18 @@ pub fn status(repo: &str) -> RepoStatus {
         }
 
         // 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
+        // porcelain v2 中 '.' 表示未修改(而非空格)
         if let Some(rest) = line.strip_prefix("1 ") {
             let mut parts = rest.splitn(8, ' ');
             let xy = parts.next().unwrap_or("  ").to_string();
             let path = unquote(parts.nth(6).unwrap_or(""));
-            let x = xy.chars().next().unwrap_or(' ').to_string();
-            let y = xy.chars().nth(1).unwrap_or(' ').to_string();
-            let staged = x != " " && x != "?";
-            let e = FileEntry { path, x, y, staged, ..Default::default() };
-            if e.staged {
-                st.staged.push(e);
-            } else {
+            let x = xy.chars().next().unwrap_or('.').to_string();
+            let y = xy.chars().nth(1).unwrap_or('.').to_string();
+            let e = FileEntry { path, x: x.clone(), y: y.clone(), ..Default::default() };
+            if x != "." && x != "?" {
+                st.staged.push(FileEntry { staged: true, ..e.clone() });
+            }
+            if y != "." {
                 st.unstaged.push(e);
             }
             continue;
@@ -231,17 +212,15 @@ pub fn status(repo: &str) -> RepoStatus {
                 Some((p, o)) => (unquote(p), Some(unquote(o))),
                 None => (unquote(&path_and_orig), None),
             };
-            let x = xy.chars().next().unwrap_or(' ').to_string();
-            let y = xy.chars().nth(1).unwrap_or(' ').to_string();
-            let staged = x != " " && x != "?";
-            st.staged.push(FileEntry {
-                path,
-                orig_path: orig,
-                x,
-                y,
-                staged,
-                ..Default::default()
-            });
+            let x = xy.chars().next().unwrap_or('.').to_string();
+            let y = xy.chars().nth(1).unwrap_or('.').to_string();
+            let e = FileEntry { path, orig_path: orig, x: x.clone(), y: y.clone(), ..Default::default() };
+            if x != "." && x != "?" {
+                st.staged.push(FileEntry { staged: true, ..e.clone() });
+            }
+            if y != "." {
+                st.unstaged.push(e);
+            }
             continue;
         }
     }
@@ -441,14 +420,17 @@ mod tests {
         std::fs::write(base.join("f.txt"), "line1\nline2\n").unwrap();
         stage_all(r).unwrap();
         commit(r, "base").unwrap();
-        run_git(r, &["checkout", "-b", "feature"]).unwrap();
+        // 双方在相同位置修改同一行,制造真实冲突
+        run_git(r, &["checkout", "-q", "-b", "feature"]).unwrap();
         std::fs::write(base.join("f.txt"), "line1\nfeature\nline2\n").unwrap();
+        stage_all(r).unwrap();
         commit(r, "feature change").unwrap();
         run_git(r, &["checkout", "-q", "master"]).unwrap();
         std::fs::write(base.join("f.txt"), "line1\nmaster\nline2\n").unwrap();
+        stage_all(r).unwrap();
         commit(r, "master change").unwrap();
-        let err = pull(r);
-        assert!(err.is_err(), "pull 应产生冲突");
+        let err = run_git(r, &["merge", "feature"]);
+        assert!(err.is_err(), "merge 应产生冲突");
         let cf = conflict_files(r);
         assert!(cf.contains(&"f.txt".to_string()));
         std::fs::remove_dir_all(base).ok();

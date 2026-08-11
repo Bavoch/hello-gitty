@@ -1,7 +1,6 @@
 /* Hello Gitty 前端逻辑:纯 vanilla,通过 __TAURI__ 全局调用后端命令 */
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
-const { open } = window.__TAURI__.dialog;
 
 const $ = (id) => document.getElementById(id);
 
@@ -70,7 +69,7 @@ function bindEvents() {
 
 /* ===== 仓库 ===== */
 async function openRepo() {
-  const dir = await open({ directory: true, multiple: false });
+  const dir = await invoke("pick_folder");
   if (!dir) return;
   repo = dir;
   settings.last_repo = dir;

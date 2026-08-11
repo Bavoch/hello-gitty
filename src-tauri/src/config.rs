@@ -1,6 +1,7 @@
 use crate::ai::AiConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tauri::Manager;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Settings {

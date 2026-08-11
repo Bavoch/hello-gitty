@@ -40,6 +40,24 @@ fn git_init(repo: String) -> Result<(), String> {
     git::run_git(&repo, &["init", "-q"]).map(|_| ())
 }
 
+/// 文件夹选择走 Rust 侧 dialog 插件,前端只依赖 core.invoke
+#[tauri::command]
+async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("选择 Git 仓库文件夹")
+        .blocking_pick_folder();
+    match picked {
+        Some(p) => match p.into_path() {
+            Ok(path) => Ok(Some(path.to_string_lossy().to_string())),
+            Err(e) => Err(format!("读取所选路径失败: {e}")),
+        },
+        None => Ok(None),
+    }
+}
+
 #[tauri::command]
 fn git_stage_all(repo: String) -> Result<(), String> {
     git::stage_all(&repo)
@@ -110,6 +128,7 @@ pub fn run() {
             settings_save,
             git_status,
             git_init,
+            pick_folder,
             git_stage_all,
             git_unstage_all,
             git_stage_file,
