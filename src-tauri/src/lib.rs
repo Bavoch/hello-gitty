@@ -148,24 +148,36 @@ struct RemoteHistory {
 #[derive(Serialize)]
 struct History {
     head: Option<String>,
-    branch: Option<String>,
     commits: Vec<git::CommitInfo>,
     remote: Option<RemoteHistory>,
 }
 
+/// 内部 git 调用并行执行,减少切换/刷新延迟
 #[tauri::command]
-fn git_history(repo: String) -> History {
-    let branch = git::status(&repo).branch;
-    let remote = git::upstream(&repo).map(|name| RemoteHistory {
-        commits: git::log_ref(&repo, &name, 20),
-        name,
-    });
-    History {
-        head: git::head_hash(&repo),
-        branch,
-        commits: git::log(&repo, 20),
-        remote,
-    }
+async fn git_history(repo: String) -> History {
+    use tauri::async_runtime::spawn_blocking;
+    let r1 = repo.clone();
+    let r2 = repo.clone();
+    let r3 = repo.clone();
+    let head_job = spawn_blocking(move || git::head_hash(&r1));
+    let upstream_job = spawn_blocking(move || git::upstream(&r2));
+    let log_job = spawn_blocking(move || git::log(&r3, 20));
+    let head = head_job.await.ok().flatten();
+    let upstream = upstream_job.await.ok().flatten();
+    let commits = log_job.await.unwrap_or_default();
+    // 远程日志依赖 upstream 结果,只能串行
+    let remote = match upstream {
+        Some(name) => {
+            let r4 = repo.clone();
+            let n = name.clone();
+            let commits = spawn_blocking(move || git::log_ref(&r4, &n, 20))
+                .await
+                .unwrap_or_default();
+            Some(RemoteHistory { name, commits })
+        }
+        None => None,
+    };
+    History { head, commits, remote }
 }
 
 #[tauri::command]

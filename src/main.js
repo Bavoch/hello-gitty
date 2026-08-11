@@ -64,9 +64,11 @@ function bindEvents() {
     e.stopPropagation();
     $("more-menu").classList.toggle("hidden");
   });
-  $("btn-more-refresh").addEventListener("click", () => {
+  $("btn-more-refresh").addEventListener("click", async () => {
     $("more-menu").classList.add("hidden");
-    refresh();
+    // 手动刷新:全量重扫所有仓库状态 + 刷新当前面板
+    await loadRepos();
+    await refresh();
   });
   $("btn-more-remove").addEventListener("click", () => {
     $("more-menu").classList.add("hidden");
@@ -187,21 +189,41 @@ async function initRepo() {
 /* ===== 刷新 ===== */
 async function refresh() {
   if (!repo) return;
-  const st = await invoke("git_status", { repo });
+  // status 与 history 并行拉取
+  const [st, hist] = await Promise.all([
+    invoke("git_status", { repo }),
+    invoke("git_history", { repo }),
+  ]);
   if (!st.is_repo) {
     showEmpty(true);
-    await loadRepos();
+    updateSidebarCurrent(st);
     return;
   }
   showPanel(st);
   updateToolbar(st);
-  await renderHistory(); // 同步历史列表与 HEAD 标记
-  await loadRepos(); // 同步侧栏状态徽标
+  renderHistory(hist, st.branch);
+  updateSidebarCurrent(st); // 侧栏只就地更新当前项,不做全量扫描
+}
+
+// 用已拿到的状态就地更新侧栏当前仓库项(零额外 git 调用)
+function updateSidebarCurrent(st) {
+  const idx = repos.findIndex((r) => r.path === repo);
+  if (idx < 0) return;
+  repos[idx] = {
+    ...repos[idx],
+    branch: st.branch,
+    ahead: st.ahead,
+    behind: st.behind,
+    staged: st.staged.length,
+    unstaged: st.unstaged.length + st.untracked.length,
+    conflicts: st.conflicts.length,
+    is_repo: st.is_repo,
+  };
+  renderRepoList();
 }
 
 /* ===== 历史(本地/远程并排) ===== */
-async function renderHistory() {
-  const h = await invoke("git_history", { repo });
+function renderHistory(h, branch) {
   const box = $("history-container");
   box.innerHTML = "";
   $("history-count").textContent = h.commits.length;
@@ -211,7 +233,7 @@ async function renderHistory() {
   cols.className = "history-cols";
   const lt = document.createElement("div");
   lt.className = "history-col-title";
-  lt.textContent = "本地 · " + (h.branch || "(无分支)");
+  lt.textContent = "本地 · " + (branch || "(无分支)");
   const rt = document.createElement("div");
   rt.className = "history-col-title remote";
   rt.textContent = h.remote ? h.remote.name : "无远程";
