@@ -3,6 +3,7 @@
   --panel: #252526;
   --panel-2: #2d2d2d;
   --hover: #2a2d2e;
+  --hover-strong: #3c3c3c; /* 下拉菜单等悬浮层上的悬停背景,须明显亮于 --panel-2 */
   --border: #3c3c3c;
   --text: #cccccc;
   --text-dim: #8a8a8a;
@@ -206,7 +207,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-size: 12px; color: var(--text);
 }
 .more-menu button svg { flex: none; opacity: .65; }
-.more-menu button:hover { background: var(--hover); color: var(--text); }
+.more-menu button:hover { background: var(--hover-strong); color: var(--text); }
 .more-menu button:hover svg { opacity: 1; }
 .more-menu .danger-item { color: var(--text); }
 .spinner {
