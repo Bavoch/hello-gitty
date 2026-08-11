@@ -129,6 +129,15 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     }
 }
 
+/// 窗口置顶开关
+#[tauri::command]
+async fn window_set_always_on_top(app: tauri::AppHandle, on: bool) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        win.set_always_on_top(on).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn git_stage_all(repo: String) -> Result<(), String> {
     git::stage_all(&repo)
@@ -227,6 +236,7 @@ pub fn run() {
             git_status,
             git_init,
             pick_folder,
+            window_set_always_on_top,
             repos_status_all,
             repos_add,
             repos_remove,

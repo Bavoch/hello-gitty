@@ -58,6 +58,7 @@ function bindEvents() {
   $("btn-pull").addEventListener("click", () => pushPull("pull"));
   $("btn-ai-resolve").addEventListener("click", resolveAllConflicts);
   $("btn-settings").addEventListener("click", openSettings);
+  $("btn-pin").addEventListener("click", togglePin);
   $("btn-settings-cancel").addEventListener("click", closeSettings);
   $("btn-settings-save").addEventListener("click", saveSettings);
   $("set-prompt-preset").addEventListener("change", updatePresetPreview);
@@ -413,6 +414,21 @@ async function resolveAllConflicts() {
 async function resolveOne(path) {
   await runBusy("ai_resolve_file", { settings: settings.ai, repo, path }, "AI 解决中…", "已解决:" + path);
   await refresh();
+}
+
+/* ===== 窗口置顶 ===== */
+let pinned = false;
+async function togglePin() {
+  pinned = !pinned;
+  try {
+    await invoke("window_set_always_on_top", { on: pinned });
+    $("btn-pin").classList.toggle("active", pinned);
+    $("btn-pin").title = pinned ? "取消置顶" : "窗口置顶";
+    toast(pinned ? "已置顶" : "已取消置顶", true);
+  } catch (e) {
+    pinned = !pinned; // 失败回滚状态
+    toast("置顶失败:" + e, false);
+  }
 }
 
 /* ===== 设置 ===== */

@@ -57,6 +57,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   width: 26px; height: 26px; border-radius: 4px; color: var(--text-dim);
 }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn.active { color: var(--accent); }
+.icon-btn.active:hover { color: var(--accent); background: #3794ff1a; }
 
 /* ===== 工具栏 ===== */
 #toolbar {
