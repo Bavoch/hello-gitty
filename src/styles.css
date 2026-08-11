@@ -79,7 +79,52 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .toolbar-divider { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
 
 /* ===== 主区 ===== */
+#workspace { flex: 1; display: flex; min-height: 0; }
+#content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #main { flex: 1; overflow-y: auto; overflow-x: hidden; }
+
+/* ===== 侧栏仓库列表 ===== */
+#sidebar {
+  width: 172px; flex: none; background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.sidebar-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px 6px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .4px; color: var(--text-dim);
+}
+.sidebar-head .icon-btn { width: 22px; height: 22px; }
+#repo-list { list-style: none; overflow-y: auto; flex: 1; }
+.repo-item {
+  padding: 7px 10px; cursor: pointer; border-left: 2px solid transparent;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.repo-item:hover { background: var(--hover); }
+.repo-item.active { border-left-color: var(--accent); background: #3794ff1a; }
+.repo-item-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.repo-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-dim); }
+.repo-dot.clean { background: var(--green); }
+.repo-dot.dirty { background: var(--yellow); }
+.repo-dot.conflict { background: var(--red); }
+.repo-dot.gone { background: var(--text-dim); }
+.repo-name {
+  flex: 1; font-size: 12px; color: var(--text); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.repo-remove {
+  flex: none; width: 16px; height: 16px; border-radius: 3px;
+  color: var(--text-dim); font-size: 13px; line-height: 1; display: none;
+  align-items: center; justify-content: center;
+}
+.repo-item:hover .repo-remove { display: inline-flex; }
+.repo-remove:hover { background: #f4877133; color: var(--red); }
+.repo-meta {
+  font-size: 10.5px; color: var(--text-dim); font-family: var(--mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 14px;
+}
+.repo-meta .c { color: var(--red); font-weight: 600; }
+.sidebar-empty { padding: 8px 10px; font-size: 11px; color: var(--text-dim); }
 
 #empty-state {
   height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;

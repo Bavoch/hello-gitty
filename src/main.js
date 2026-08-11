@@ -7,7 +7,8 @@ const $ = (id) => document.getElementById(id);
 const DEFAULT_AI = { base_url: "https://api.openai.com/v1", api_key: "", model: "gpt-4o-mini", lang: "中文", prompt_preset: "conventional", custom_prompt: "" };
 const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" };
 
-let settings = { ai: { ...DEFAULT_AI }, last_repo: null };
+let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [] };
+let repos = []; // 侧栏仓库摘要列表
 let repo = null;
 let busy = false;
 let toastTimer = null;
@@ -19,8 +20,16 @@ async function init() {
   try {
     settings = await invoke("settings_load");
     settings.ai = { ...DEFAULT_AI, ...settings.ai }; // 兼容旧配置,补齐新字段
-  } catch (_) { /* 首次运行,使用默认值 */ }
-  repo = settings.last_repo || null;
+    settings.repos = settings.repos || [];
+  } catch (_) { settings.repos = []; }
+  // 旧配置迁移:last_repo 不在列表时补进列表
+  if (settings.last_repo && !settings.repos.includes(settings.last_repo)) {
+    settings.repos.push(settings.last_repo);
+    try { await invoke("settings_save", { settings }); } catch (_) {}
+  }
+  repo = settings.last_repo && settings.repos.includes(settings.last_repo)
+    ? settings.last_repo
+    : (settings.repos[0] || null);
 
   bindEvents();
   listen("conflict-progress", (e) => {
@@ -29,6 +38,7 @@ async function init() {
     $("conflict-fill").style.width = `${Math.round((p.done / p.total) * 100)}%`;
   });
 
+  await loadRepos();
   if (repo) {
     await refresh();
   } else {
@@ -37,8 +47,9 @@ async function init() {
 }
 
 function bindEvents() {
-  $("btn-open").addEventListener("click", openRepo);
-  $("btn-open2").addEventListener("click", openRepo);
+  $("btn-open").addEventListener("click", addRepo);
+  $("btn-open2").addEventListener("click", addRepo);
+  $("btn-add-repo").addEventListener("click", addRepo);
   $("btn-init").addEventListener("click", initRepo);
   $("btn-refresh").addEventListener("click", () => refresh());
   $("btn-stage-all").addEventListener("click", () => stageAll(true));
@@ -70,19 +81,91 @@ function bindEvents() {
 }
 
 /* ===== 仓库 ===== */
-async function openRepo() {
+async function addRepo() {
   const dir = await invoke("pick_folder");
   if (!dir) return;
+  try {
+    settings.repos = await invoke("repos_add", { path: dir });
+  } catch (e) { toast("添加失败:" + e, false); return; }
   repo = dir;
   settings.last_repo = dir;
-  try { await invoke("settings_save", { settings }); } catch (_) {}
+  try { await invoke("repos_set_current", { path: dir }); } catch (_) {}
+  await loadRepos();
   await refresh();
+}
+
+async function loadRepos() {
+  try { repos = await invoke("repos_status_all"); } catch (_) { repos = []; }
+  renderRepoList();
+}
+
+function renderRepoList() {
+  const ul = $("repo-list");
+  ul.innerHTML = "";
+  $("sidebar-empty").classList.toggle("hidden", repos.length > 0);
+  for (const r of repos) {
+    const li = document.createElement("li");
+    li.className = "repo-item" + (r.path === repo ? " active" : "");
+    li.title = r.path;
+
+    const top = document.createElement("div");
+    top.className = "repo-item-top";
+    const dot = document.createElement("span");
+    const dotClass = !r.is_repo ? "gone"
+      : r.conflicts > 0 ? "conflict"
+      : (r.staged + r.unstaged > 0 ? "dirty" : "clean");
+    dot.className = "repo-dot " + dotClass;
+    const name = document.createElement("span");
+    name.className = "repo-name";
+    name.textContent = r.name;
+    const rm = document.createElement("button");
+    rm.className = "repo-remove";
+    rm.textContent = "×";
+    rm.title = "移除仓库";
+    rm.addEventListener("click", (ev) => { ev.stopPropagation(); removeRepo(r.path); });
+    top.append(dot, name, rm);
+
+    const meta = document.createElement("div");
+    meta.className = "repo-meta";
+    // 分支与数字都是安全的;仍转义以防路径含特殊字符
+    let html = escapeHtml(r.is_repo ? (r.branch || "(无分支)") : "不是 Git 仓库");
+    if (r.conflicts) html += ` · <span class="c">${r.conflicts} 冲突</span>`;
+    if (r.staged) html += ` · ${r.staged} 暂存`;
+    if (r.unstaged) html += ` · ${r.unstaged} 更改`;
+    if (r.ahead || r.behind) html += ` · ⇡${r.ahead}⇣${r.behind}`;
+    meta.innerHTML = html;
+
+    li.append(top, meta);
+    li.addEventListener("click", () => switchRepo(r.path));
+    ul.appendChild(li);
+  }
+}
+
+async function switchRepo(path) {
+  if (path === repo) return;
+  repo = path;
+  settings.last_repo = path;
+  try { await invoke("repos_set_current", { path }); } catch (_) {}
+  renderRepoList();
+  await refresh();
+}
+
+async function removeRepo(path) {
+  try { settings.repos = await invoke("repos_remove", { path }); }
+  catch (e) { toast("移除失败:" + e, false); return; }
+  if (repo === path) {
+    repo = settings.repos[0] || null;
+    settings.last_repo = repo;
+  }
+  await loadRepos();
+  if (repo) await refresh(); else showEmpty(false);
 }
 
 async function initRepo() {
   if (!repo) return;
   await runBusy("git_init", { repo }, "初始化中…", "仓库已初始化");
   await refresh();
+  await loadRepos();
 }
 
 /* ===== 刷新 ===== */
@@ -91,10 +174,12 @@ async function refresh() {
   const st = await invoke("git_status", { repo });
   if (!st.is_repo) {
     showEmpty(true);
+    await loadRepos();
     return;
   }
   showPanel(st);
   updateToolbar(st);
+  await loadRepos(); // 同步侧栏状态徽标
 }
 
 function showEmpty(showInit) {

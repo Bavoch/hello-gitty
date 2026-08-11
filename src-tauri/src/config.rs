@@ -9,6 +9,9 @@ pub struct Settings {
     pub ai: AiConfig,
     #[serde(default)]
     pub last_repo: Option<String>,
+    /// 仓库列表(多仓库管理,顺序即展示顺序)
+    #[serde(default)]
+    pub repos: Vec<String>,
 }
 
 pub struct SettingsStore {

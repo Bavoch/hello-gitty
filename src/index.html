@@ -23,66 +23,81 @@
     </div>
   </header>
 
-  <section id="toolbar">
-    <div class="repo-chip" id="repo-chip" title="仓库路径">
-      <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Zm10 0h-6c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Z"/></svg>
-      <span id="repo-name">未打开仓库</span>
-    </div>
-    <button id="btn-open" class="tool-btn" title="打开/切换 Git 仓库">选择仓库</button>
-    <span class="toolbar-divider"></span>
-    <button id="btn-stage-all" class="tool-btn" disabled>全部暂存</button>
-    <button id="btn-unstage-all" class="tool-btn" disabled>取消暂存</button>
-    <button id="btn-commit" class="tool-btn primary" disabled>提交</button>
-    <button id="btn-push" class="tool-btn" disabled>推送</button>
-    <button id="btn-pull" class="tool-btn" disabled>拉取</button>
-    <button id="btn-refresh" class="icon-btn" title="刷新">
-      <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35Z"/></svg>
-    </button>
-  </section>
-
-  <main id="main">
-    <div id="empty-state" class="hidden">
-      <svg viewBox="0 0 24 24" width="64" height="64"><path fill="#4a4a55" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Zm10 0h-6c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Z"/></svg>
-      <h2>打开一个 Git 仓库</h2>
-      <p>选择任意包含 <code>.git</code> 的文件夹,或直接初始化一个新仓库</p>
-      <div class="empty-actions">
-        <button id="btn-open2" class="tool-btn primary">选择文件夹</button>
-        <button id="btn-init" class="tool-btn hidden">初始化仓库</button>
-      </div>
-    </div>
-
-    <div id="panel" class="hidden">
-      <div class="section" id="sec-conflicts">
-        <button class="section-head" data-target="conflict-list">
-          <span class="caret">▸</span>
-          <span class="badge badge-c">C</span>
-          <span id="conflict-title">冲突</span>
-          <span class="count" id="conflict-count">0</span>
+  <main id="workspace">
+    <aside id="sidebar">
+      <div class="sidebar-head">
+        <span>仓库</span>
+        <button id="btn-add-repo" class="icon-btn" title="添加仓库">
+          <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"/></svg>
         </button>
-        <div class="section-actions">
-          <button id="btn-ai-resolve" class="mini-btn ai">用 AI 解决全部</button>
+      </div>
+      <ul id="repo-list"></ul>
+      <div id="sidebar-empty" class="sidebar-empty hidden">暂无仓库,点击 + 添加</div>
+    </aside>
+
+    <div id="content">
+      <section id="toolbar">
+        <div class="repo-chip" id="repo-chip" title="仓库路径">
+          <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Zm10 0h-6c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Z"/></svg>
+          <span id="repo-name">未打开仓库</span>
         </div>
-        <ul class="file-list" id="conflict-list"></ul>
-      </div>
-
-      <div class="section" id="sec-staged">
-        <button class="section-head" data-target="staged-list">
-          <span class="caret">▸</span>
-          <span class="badge badge-a">A</span>
-          <span>暂存的更改</span>
-          <span class="count" id="staged-count">0</span>
+        <button id="btn-open" class="tool-btn" title="添加一个 Git 仓库">添加仓库</button>
+        <span class="toolbar-divider"></span>
+        <button id="btn-stage-all" class="tool-btn" disabled>全部暂存</button>
+        <button id="btn-unstage-all" class="tool-btn" disabled>取消暂存</button>
+        <button id="btn-commit" class="tool-btn primary" disabled>提交</button>
+        <button id="btn-push" class="tool-btn" disabled>推送</button>
+        <button id="btn-pull" class="tool-btn" disabled>拉取</button>
+        <button id="btn-refresh" class="icon-btn" title="刷新">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35Z"/></svg>
         </button>
-        <ul class="file-list" id="staged-list"></ul>
-      </div>
+      </section>
 
-      <div class="section" id="sec-unstaged">
-        <button class="section-head" data-target="unstaged-list">
-          <span class="caret">▸</span>
-          <span class="badge badge-m">M</span>
-          <span>更改</span>
-          <span class="count" id="unstaged-count">0</span>
-        </button>
-        <ul class="file-list" id="unstaged-list"></ul>
+      <div id="main">
+        <div id="empty-state" class="hidden">
+          <svg viewBox="0 0 24 24" width="64" height="64"><path fill="#4a4a55" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Zm10 0h-6c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Z"/></svg>
+          <h2 id="empty-title">打开一个 Git 仓库</h2>
+          <p id="empty-desc">选择任意包含 <code>.git</code> 的文件夹,或直接初始化一个新仓库</p>
+          <div class="empty-actions">
+            <button id="btn-open2" class="tool-btn primary">选择文件夹</button>
+            <button id="btn-init" class="tool-btn hidden">初始化仓库</button>
+          </div>
+        </div>
+
+        <div id="panel" class="hidden">
+          <div class="section" id="sec-conflicts">
+            <button class="section-head" data-target="conflict-list">
+              <span class="caret">▸</span>
+              <span class="badge badge-c">C</span>
+              <span id="conflict-title">冲突</span>
+              <span class="count" id="conflict-count">0</span>
+            </button>
+            <div class="section-actions">
+              <button id="btn-ai-resolve" class="mini-btn ai">用 AI 解决全部</button>
+            </div>
+            <ul class="file-list" id="conflict-list"></ul>
+          </div>
+
+          <div class="section" id="sec-staged">
+            <button class="section-head" data-target="staged-list">
+              <span class="caret">▸</span>
+              <span class="badge badge-a">A</span>
+              <span>暂存的更改</span>
+              <span class="count" id="staged-count">0</span>
+            </button>
+            <ul class="file-list" id="staged-list"></ul>
+          </div>
+
+          <div class="section" id="sec-unstaged">
+            <button class="section-head" data-target="unstaged-list">
+              <span class="caret">▸</span>
+              <span class="badge badge-m">M</span>
+              <span>更改</span>
+              <span class="count" id="unstaged-count">0</span>
+            </button>
+            <ul class="file-list" id="unstaged-list"></ul>
+          </div>
+        </div>
       </div>
     </div>
   </main>

@@ -35,6 +35,77 @@ fn git_status(repo: String) -> git::RepoStatus {
     git::status(&repo)
 }
 
+/// 单仓库状态摘要(侧栏列表用)
+#[derive(Serialize, Clone)]
+struct RepoSummary {
+    path: String,
+    name: String,
+    branch: Option<String>,
+    ahead: i32,
+    behind: i32,
+    staged: usize,
+    unstaged: usize,
+    conflicts: usize,
+    is_repo: bool,
+}
+
+fn summarize(path: &str) -> RepoSummary {
+    let st = git::status(path);
+    let name = std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string());
+    RepoSummary {
+        path: path.to_string(),
+        name,
+        branch: st.branch,
+        ahead: st.ahead,
+        behind: st.behind,
+        staged: st.staged.len(),
+        unstaged: st.unstaged.len() + st.untracked.len(),
+        conflicts: st.conflicts.len(),
+        is_repo: st.is_repo,
+    }
+}
+
+/// 读取配置中的仓库列表并逐个生成状态摘要
+#[tauri::command]
+fn repos_status_all(app: tauri::AppHandle) -> Vec<RepoSummary> {
+    let settings = SettingsStore::new(&app).load();
+    settings.repos.iter().map(|p| summarize(p)).collect()
+}
+
+#[tauri::command]
+fn repos_add(app: tauri::AppHandle, path: String) -> Result<Vec<String>, String> {
+    let store = SettingsStore::new(&app);
+    let mut s = store.load();
+    if !s.repos.iter().any(|p| p == &path) {
+        s.repos.push(path.clone());
+        store.save(&s)?;
+    }
+    Ok(s.repos)
+}
+
+#[tauri::command]
+fn repos_remove(app: tauri::AppHandle, path: String) -> Result<Vec<String>, String> {
+    let store = SettingsStore::new(&app);
+    let mut s = store.load();
+    s.repos.retain(|p| p != &path);
+    if s.last_repo.as_deref() == Some(path.as_str()) {
+        s.last_repo = None;
+    }
+    store.save(&s)?;
+    Ok(s.repos)
+}
+
+#[tauri::command]
+fn repos_set_current(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let store = SettingsStore::new(&app);
+    let mut s = store.load();
+    s.last_repo = Some(path);
+    store.save(&s)
+}
+
 #[tauri::command]
 fn git_init(repo: String) -> Result<(), String> {
     git::run_git(&repo, &["init", "-q"]).map(|_| ())
@@ -141,6 +212,10 @@ pub fn run() {
             git_status,
             git_init,
             pick_folder,
+            repos_status_all,
+            repos_add,
+            repos_remove,
+            repos_set_current,
             git_stage_all,
             git_unstage_all,
             git_stage_file,
