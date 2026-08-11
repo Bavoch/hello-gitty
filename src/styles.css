@@ -57,7 +57,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--border);
 }
-/* 幽灵按钮:透明底 + 描边 + 图标文字,悬停显现背景 */
+/* 幽灵按钮:透明底 + 描边 + 图标文字;悬停只变背景,边框保持不变 */
 .tool-btn {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: 4px;
@@ -65,12 +65,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-size: 12px;
 }
 .tool-btn svg { flex: none; }
-.tool-btn:hover:not(:disabled) { background: var(--hover); border-color: var(--text-dim); }
+.tool-btn:hover:not(:disabled) { background: var(--hover-strong); }
 /* 主操作:加粗文字区分,不用颜色 */
 .tool-btn.primary { font-weight: 600; }
-.tool-btn.primary:hover:not(:disabled) { background: var(--hover); border-color: var(--text); }
 .tool-btn.danger { color: var(--text); }
-.tool-btn.danger:hover:not(:disabled) { background: var(--hover); border-color: var(--text-dim); }
 .dlg-hint.warn { color: var(--red); }
 
 /* ===== 主区 ===== */
