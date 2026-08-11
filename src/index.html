@@ -46,9 +46,13 @@
         <span class="busy-ind hidden" id="sb-busy">
           <span class="spinner"></span><span id="sb-busy-text">处理中…</span>
         </span>
-        <button id="btn-refresh" class="icon-btn" title="刷新">
-          <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35Z"/></svg>
-        </button>
+        <div class="more-wrap">
+          <button id="btn-more" class="tool-btn">更多</button>
+          <div id="more-menu" class="more-menu hidden">
+            <button id="btn-more-refresh">刷新</button>
+            <button id="btn-more-remove" class="danger-item">移除项目</button>
+          </div>
+        </div>
       </section>
 
       <div id="main">

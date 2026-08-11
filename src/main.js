@@ -50,7 +50,6 @@ function bindEvents() {
   $("btn-open2").addEventListener("click", addRepo);
   $("btn-add-repo").addEventListener("click", addRepo);
   $("btn-init").addEventListener("click", initRepo);
-  $("btn-refresh").addEventListener("click", () => refresh());
   $("btn-stage-all").addEventListener("click", () => stageAll(true));
   $("btn-unstage-all").addEventListener("click", () => stageAll(false));
   $("btn-commit").addEventListener("click", onCommit);
@@ -59,6 +58,21 @@ function bindEvents() {
   $("btn-ai-resolve").addEventListener("click", resolveAllConflicts);
   $("btn-settings").addEventListener("click", openSettings);
   $("btn-pin").addEventListener("click", togglePin);
+
+  // 更多菜单
+  $("btn-more").addEventListener("click", (e) => {
+    e.stopPropagation();
+    $("more-menu").classList.toggle("hidden");
+  });
+  $("btn-more-refresh").addEventListener("click", () => {
+    $("more-menu").classList.add("hidden");
+    refresh();
+  });
+  $("btn-more-remove").addEventListener("click", () => {
+    $("more-menu").classList.add("hidden");
+    if (repo) removeRepo(repo);
+  });
+  document.addEventListener("click", () => $("more-menu").classList.add("hidden"));
   $("btn-settings-cancel").addEventListener("click", closeSettings);
   $("btn-settings-save").addEventListener("click", saveSettings);
   $("set-prompt-preset").addEventListener("change", updatePresetPreview);
@@ -125,12 +139,7 @@ function renderRepoList() {
     const name = document.createElement("span");
     name.className = "repo-name";
     name.textContent = r.name;
-    const rm = document.createElement("button");
-    rm.className = "repo-remove";
-    rm.textContent = "×";
-    rm.title = "移除仓库";
-    rm.addEventListener("click", (ev) => { ev.stopPropagation(); removeRepo(r.path); });
-    top.append(dot, name, rm);
+    top.append(dot, name);
 
     const meta = document.createElement("div");
     meta.className = "repo-meta";
@@ -665,7 +674,7 @@ function setBusy(v, text) {
   busy = v;
   $("sb-busy").classList.toggle("hidden", !v);
   if (text) $("sb-busy-text").textContent = text;
-  ["btn-stage-all", "btn-unstage-all", "btn-commit", "btn-push", "btn-pull", "btn-refresh"].forEach((id) => {
+  ["btn-stage-all", "btn-unstage-all", "btn-commit", "btn-push", "btn-pull", "btn-more"].forEach((id) => {
     $(id).disabled = v;
   });
 }
