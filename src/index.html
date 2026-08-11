@@ -40,14 +40,26 @@
 
     <div id="content">
       <section id="toolbar">
-        <button id="btn-commit" class="tool-btn primary" disabled>提交</button>
-        <button id="btn-push" class="tool-btn" disabled>推送</button>
-        <button id="btn-pull" class="tool-btn" disabled>拉取</button>
+        <button id="btn-commit" class="tool-btn primary" disabled>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          提交
+        </button>
+        <button id="btn-push" class="tool-btn" disabled>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+          推送
+        </button>
+        <button id="btn-pull" class="tool-btn" disabled>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+          拉取
+        </button>
         <span class="busy-ind hidden" id="sb-busy">
           <span class="spinner"></span><span id="sb-busy-text">处理中…</span>
         </span>
         <div class="more-wrap">
-          <button id="btn-more" class="tool-btn">更多</button>
+          <button id="btn-more" class="tool-btn">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>
+            更多
+          </button>
           <div id="more-menu" class="more-menu hidden">
             <button id="btn-more-refresh">刷新</button>
             <button id="btn-more-remove" class="danger-item">移除项目</button>
