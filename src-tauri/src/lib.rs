@@ -5,7 +5,7 @@ mod git;
 use ai::{AiConfig, ConflictOutcome};
 use config::{Settings, SettingsStore};
 use serde::Serialize;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[derive(Serialize)]
 struct OpResult {
@@ -122,6 +122,13 @@ async fn ai_resolve_conflicts(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 重复启动时聚焦已有窗口,不创建第二个实例
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             settings_load,
@@ -140,6 +147,53 @@ pub fn run() {
             ai_resolve_file,
             ai_resolve_conflicts,
         ])
+        .on_window_event(|window, event| {
+            // 关闭窗口不退出应用,隐藏到菜单栏托盘常驻
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .setup(|app| {
+            use tauri::menu::{Menu, MenuItem};
+            use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+            let show = MenuItem::with_id(app, "show", "显示 Hello Gitty", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit])?;
+
+            let _tray = TrayIconBuilder::with_id("hello-gitty-tray")
+                .icon(app.default_window_icon().expect("缺少应用图标").clone())
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // 左键单击托盘图标 → 显示主窗口
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("Hello Gitty 启动失败");
 }
