@@ -99,6 +99,11 @@ async fn ai_commit_message(settings: AiConfig, repo: String) -> Result<String, S
 }
 
 #[tauri::command]
+fn ai_presets() -> Vec<ai::PromptPreset> {
+    ai::presets()
+}
+
+#[tauri::command]
 async fn ai_resolve_file(settings: AiConfig, repo: String, path: String) -> Result<(), String> {
     ai::resolve_conflict_file(&settings, &repo, &path).await
 }
@@ -144,6 +149,7 @@ pub fn run() {
             git_push,
             git_pull,
             ai_commit_message,
+            ai_presets,
             ai_resolve_file,
             ai_resolve_conflicts,
         ])

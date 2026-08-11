@@ -4,20 +4,21 @@ const { listen } = window.__TAURI__.event;
 
 const $ = (id) => document.getElementById(id);
 
-const DEFAULT_AI = { base_url: "https://api.openai.com/v1", api_key: "", model: "gpt-4o-mini", lang: "中文" };
+const DEFAULT_AI = { base_url: "https://api.openai.com/v1", api_key: "", model: "gpt-4o-mini", lang: "中文", prompt_preset: "conventional", custom_prompt: "" };
 const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" };
 
 let settings = { ai: { ...DEFAULT_AI }, last_repo: null };
 let repo = null;
 let busy = false;
 let toastTimer = null;
+let promptPresets = [];
 
 init();
 
 async function init() {
   try {
     settings = await invoke("settings_load");
-    if (!settings.ai) settings.ai = { ...DEFAULT_AI };
+    settings.ai = { ...DEFAULT_AI, ...settings.ai }; // 兼容旧配置,补齐新字段
   } catch (_) { /* 首次运行,使用默认值 */ }
   repo = settings.last_repo || null;
 
@@ -49,6 +50,7 @@ function bindEvents() {
   $("btn-settings").addEventListener("click", openSettings);
   $("btn-settings-cancel").addEventListener("click", closeSettings);
   $("btn-settings-save").addEventListener("click", saveSettings);
+  $("set-prompt-preset").addEventListener("change", updatePresetPreview);
   $("btn-commit-cancel").addEventListener("click", () => $("dlg-commit").classList.add("hidden"));
   $("btn-commit-confirm").addEventListener("click", doCommit);
   $("btn-regen").addEventListener("click", regenMessage);
@@ -300,12 +302,55 @@ async function resolveOne(path) {
 }
 
 /* ===== 设置 ===== */
-function openSettings() {
+async function openSettings() {
   $("set-base-url").value = settings.ai.base_url || DEFAULT_AI.base_url;
   $("set-api-key").value = settings.ai.api_key || "";
   $("set-model").value = settings.ai.model || DEFAULT_AI.model;
   $("set-lang").value = settings.ai.lang || "中文";
+  $("set-custom-prompt").value = settings.ai.custom_prompt || "";
+
+  // 加载内置提示词预设
+  try { promptPresets = await invoke("ai_presets"); } catch (_) { promptPresets = []; }
+  const sel = $("set-prompt-preset");
+  sel.innerHTML = "";
+  for (const p of promptPresets) {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  }
+  const customOpt = document.createElement("option");
+  customOpt.value = "custom";
+  customOpt.textContent = "自定义…";
+  sel.appendChild(customOpt);
+  sel.value = settings.ai.prompt_preset || "conventional";
+
+  updatePresetPreview();
   $("dlg-settings").classList.remove("hidden");
+}
+
+function updatePresetPreview() {
+  const id = $("set-prompt-preset").value;
+  $("custom-prompt-field").classList.toggle("hidden", id !== "custom");
+  const box = $("preset-preview");
+  if (id === "custom") {
+    box.classList.add("hidden");
+    return;
+  }
+  const p = promptPresets.find((x) => x.id === id);
+  if (!p) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  box.innerHTML =
+    `<div class="pp-title">${escapeHtml(p.name)}</div>` +
+    `<div class="pp-desc">${escapeHtml(p.description)}</div>` +
+    `<div class="pp-label">系统提示词(system)</div>` +
+    `<pre>${escapeHtml(p.system)}</pre>` +
+    `<div class="pp-label">用户提示词模板(user,占位符会被替换)</div>` +
+    `<pre>${escapeHtml(p.user_template)}</pre>`;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function closeSettings() { $("dlg-settings").classList.add("hidden"); }
@@ -316,6 +361,8 @@ async function saveSettings() {
     api_key: $("set-api-key").value.trim(),
     model: $("set-model").value.trim() || DEFAULT_AI.model,
     lang: $("set-lang").value,
+    prompt_preset: $("set-prompt-preset").value,
+    custom_prompt: $("set-custom-prompt").value,
   };
   try {
     await invoke("settings_save", { settings });

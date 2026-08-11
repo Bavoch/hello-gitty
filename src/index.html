@@ -150,6 +150,16 @@
           <option value="英文">英文</option>
         </select>
       </label>
+      <label class="field">
+        <span>提交信息提示词</span>
+        <select id="set-prompt-preset"></select>
+      </label>
+      <div id="preset-preview" class="preset-preview hidden"></div>
+      <label class="field hidden" id="custom-prompt-field">
+        <span>自定义提示词</span>
+        <textarea id="set-custom-prompt" rows="7" placeholder="在这里编写你自己的提示词模板…"></textarea>
+      </label>
+      <p class="dlg-hint">模板占位符:<code>{diff}</code> 变更差异 · <code>{log}</code> 仓库历史风格 · <code>{lang}</code> 语言指令</p>
       <p class="dlg-hint">兼容任何 OpenAI 格式的服务(OpenAI、DeepSeek、通义等),Key 仅保存在本机。</p>
       <div class="dlg-actions">
         <span class="spacer"></span>
