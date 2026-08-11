@@ -215,7 +215,7 @@ async fn git_commit(repo: String, message: String) -> OpResult {
 }
 
 #[tauri::command]
-async fn git_push(app: tauri::AppHandle, repo: String) -> OpResult {
+async fn git_push(repo: String) -> OpResult {
     // 已配置 origin 的仓库走普通推送
     if git::run_git(&repo, &["remote", "get-url", "origin"]).is_ok() {
         return op(
@@ -224,22 +224,73 @@ async fn git_push(app: tauri::AppHandle, repo: String) -> OpResult {
                 .unwrap_or_else(|e| Err(e.to_string())),
         );
     }
-    // 无远程仓库:按优先级探测凭据来源并自动创建
-    let settings = SettingsStore::new(&app).load();
-    let configured = settings.github_token.unwrap_or_default();
-    let result = if !configured.trim().is_empty() {
-        auto_create_and_push(&repo, configured.trim()).await
-    } else if gh_authed() {
+    // 无远程仓库:按优先级探测凭据并自动创建
+    let result = if gh_authed() {
         auto_create_via_gh(&repo)
     } else if let Some(token) = system_github_token() {
         auto_create_and_push(&repo, &token).await
     } else {
-        Err("还没有远程仓库,也未找到可用的 GitHub 凭据。任选其一:① 设置页填写 GitHub Token;② 安装并登录 GitHub CLI(gh auth login);③ 在终端 git push 过一次 GitHub 仓库".into())
+        // 引导用户去浏览器授权(前端识别该标记后打开认证页)
+        Err("[NEED_AUTH]还没有远程仓库,也未找到可用的 GitHub 凭据".into())
     };
     match result {
         Ok(o) => op(Ok(format!("已自动创建远程仓库并推送\n{o}"))),
         Err(e) => op(Err(e)),
     }
+}
+
+/// 用户通过浏览器授权拿到 Token 后:存入系统钥匙串 → 创建远程 → 推送
+#[tauri::command]
+async fn git_push_with_token(repo: String, token: String) -> OpResult {
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        return op(Err("Token 不能为空".into()));
+    }
+    // 写入系统 git 凭据,后续推送自动复用
+    let _ = credential_approve(&token);
+    match auto_create_and_push(&repo, &token).await {
+        Ok(o) => op(Ok(format!("已自动创建远程仓库并推送\n{o}"))),
+        Err(e) => op(Err(e)),
+    }
+}
+
+/// 在系统浏览器打开 GitHub 生成 Token 的页面(预填 repo scope)
+#[tauri::command]
+async fn open_auth_page() -> Result<(), String> {
+    let url = "https://github.com/settings/tokens/new?scopes=repo&description=Hello+Gitty";
+    let out = std::process::Command::new("open")
+        .arg(url)
+        .output()
+        .map_err(|e| format!("无法打开浏览器: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "无法打开浏览器: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
+}
+
+/// 把 Token 写入系统钥匙串(git credential approve)
+fn credential_approve(token: &str) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = std::process::Command::new("git")
+        .args(["credential", "approve"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or("无法写入凭据")?
+        .write_all(format!("protocol=https\nhost=github.com\nusername=git\npassword={token}\n\n").as_bytes())
+        .map_err(|e| e.to_string())?;
+    let _ = child.wait();
+    Ok(())
 }
 
 /// 用 GitHub API 创建私有仓库 → 关联 origin → 推送
@@ -423,6 +474,8 @@ pub fn run() {
             git_unstage_file,
             git_commit,
             git_push,
+            git_push_with_token,
+            open_auth_page,
             git_pull,
             git_finish_merge,
             git_history,

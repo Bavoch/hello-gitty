@@ -89,6 +89,8 @@ function bindEvents() {
   $("btn-merge-manual").addEventListener("click", () => $("dlg-merge-conflict").classList.add("hidden"));
   $("btn-reset-cancel").addEventListener("click", () => $("dlg-reset").classList.add("hidden"));
   $("btn-reset-confirm").addEventListener("click", doReset);
+  $("btn-token-cancel").addEventListener("click", () => $("dlg-token").classList.add("hidden"));
+  $("btn-token-confirm").addEventListener("click", submitGithubToken);
 
   document.querySelectorAll(".section-head").forEach((h) =>
     h.addEventListener("click", () => {
@@ -527,14 +529,35 @@ async function pushPull(kind) {
   try {
     const r = await invoke(kind === "push" ? "git_push" : "git_pull", { repo });
     toast(r.output, r.ok);
+    // 无远程且无凭据:引导浏览器授权
+    if (kind === "push" && !r.ok && r.output.startsWith("[NEED_AUTH]")) {
+      askGithubToken();
+    }
   } catch (e) {
-    toast(String(e), false);
+    if (kind === "push" && String(e).includes("[NEED_AUTH]")) askGithubToken();
+    else toast(String(e), false);
   } finally {
     setBusy(false);
   }
   await refresh();
   // 冲突只在拉取后提示,由用户决定是否用 AI 自动解决
   if (kind === "pull") checkConflictsAfterPull();
+}
+
+/* ===== GitHub 浏览器授权 ===== */
+async function askGithubToken() {
+  try { await invoke("open_auth_page"); } catch (_) { /* 浏览器打不开也不阻塞弹窗 */ }
+  $("set-gh-token").value = "";
+  $("dlg-token").classList.remove("hidden");
+  $("set-gh-token").focus();
+}
+
+async function submitGithubToken() {
+  const token = $("set-gh-token").value.trim();
+  if (!token) { toast("Token 不能为空", false); return; }
+  $("dlg-token").classList.add("hidden");
+  const r = await runBusy("git_push_with_token", { repo, token }, "创建远程仓库中…");
+  await refresh();
 }
 
 async function checkConflictsAfterPull() {
@@ -608,7 +631,6 @@ async function openSettings() {
   $("set-lang").value = settings.ai.lang || "中文";
   $("set-commit-mode").value = settings.ai.commit_mode || "auto";
   $("set-custom-prompt").value = settings.ai.custom_prompt || "";
-  $("set-github-token").value = settings.github_token || "";
 
   // 加载内置提示词预设
   try { promptPresets = await invoke("ai_presets"); } catch (_) { promptPresets = []; }
@@ -666,7 +688,6 @@ async function saveSettings() {
     prompt_preset: $("set-prompt-preset").value,
     custom_prompt: $("set-custom-prompt").value,
   };
-  settings.github_token = $("set-github-token").value.trim() || null;
   try {
     await invoke("settings_save", { settings });
     closeSettings();
