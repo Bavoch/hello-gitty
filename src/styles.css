@@ -74,6 +74,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .tool-btn.danger { color: var(--text); }
 .dlg-hint.warn { color: var(--red); }
 
+/* 按钮加载状态:内置 spinner + 文案 */
+.tool-btn.loading, .mini-btn.loading, .icon-btn.loading {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  cursor: default;
+}
+.btn-spinner {
+  width: 10px; height: 10px; border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; flex: none;
+}
+
 /* 分支切换 chip */
 .branch-chip { font-family: var(--mono); font-size: 12px; }
 .branch-chip .caret-svg { opacity: .6; }

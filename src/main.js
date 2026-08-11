@@ -68,8 +68,13 @@ function bindEvents() {
   $("btn-more-refresh").addEventListener("click", async () => {
     $("more-menu").classList.add("hidden");
     // 手动刷新:全量重扫所有仓库状态 + 刷新当前面板
-    await loadRepos();
-    await refresh();
+    setButtonLoading($("btn-more"), true, "刷新中…");
+    try {
+      await loadRepos();
+      await refresh();
+    } finally {
+      setButtonLoading($("btn-more"), false);
+    }
   });
   $("btn-more-remove").addEventListener("click", () => {
     $("more-menu").classList.add("hidden");
@@ -193,7 +198,15 @@ async function removeRepo(path) {
 
 async function initRepo() {
   if (!repo) return;
-  await runBusy("git_init", { repo }, "初始化中…", "仓库已初始化");
+  setButtonLoading($("btn-init"), true, "初始化…");
+  try {
+    await invoke("git_init", { repo });
+    toast("仓库已初始化", true);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading($("btn-init"), false);
+  }
   await refresh();
   await loadRepos();
 }
@@ -381,10 +394,20 @@ function askReset(hash, short) {
 async function doReset() {
   if (!resetHash) return;
   $("dlg-reset").classList.add("hidden");
-  const r = await runBusy("git_reset_hard", { repo, hash: resetHash }, "强制回退中…");
+  setButtonLoading($("btn-reset-confirm"), true, "回退中…");
+  let ok = false;
+  try {
+    const r = await invoke("git_reset_hard", { repo, hash: resetHash });
+    ok = r && r.ok;
+    if (!ok) toast(r.output, false);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading($("btn-reset-confirm"), false);
+  }
   resetHash = null;
   await refresh();
-  if (r && r.ok) toast("已强制回退", true);
+  if (ok) toast("已强制回退", true);
 }
 
 function showEmpty(showInit) {
@@ -488,8 +511,15 @@ function stChar(e, kind) {
 
 /* ===== 操作 ===== */
 async function stageAll(stage) {
-  await runBusy(stage ? "git_stage_all" : "git_unstage_all", { repo },
-    stage ? "暂存中…" : "取消暂存中…", stage ? "已全部暂存" : "已全部取消暂存");
+  const btn = stage ? $("btn-stage-all") : $("btn-unstage-all");
+  setButtonLoading(btn, true, stage ? "暂存中" : "取消中");
+  try {
+    await invoke(stage ? "git_stage_all" : "git_unstage_all", { repo });
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading(btn, false);
+  }
   await refresh();
 }
 
@@ -510,14 +540,13 @@ async function onCommit() {
   }
 
   let msg = "";
+  setButtonLoading($("btn-commit"), true, "提交中…");
   try {
-    setBusy(true, "AI 撰写提交信息…");
     msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
     // 直接提交模式:AI 生成后立即提交
     if (settings.ai.commit_mode === "auto") {
       await invoke("git_commit", { repo, message: msg });
       toast("提交成功", true);
-      setBusy(false);
       await refresh();
       return;
     }
@@ -526,7 +555,7 @@ async function onCommit() {
     // AI 失败(如未配 Key):回退到手动填写确认,保证提交可用
     showCommitDialog("", "AI 生成失败:" + e + " 请手动填写:");
   } finally {
-    setBusy(false);
+    setButtonLoading($("btn-commit"), false);
   }
 }
 
@@ -538,28 +567,38 @@ function showCommitDialog(msg, hint) {
 }
 
 async function regenMessage() {
-  setBusy(true, "重新生成…");
+  setButtonLoading($("btn-regen"), true, "生成中…");
   try {
     const msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
     $("commit-msg").value = msg;
     $("commit-hint").textContent = "AI 已重新生成,可修改后提交";
   } catch (e) {
     $("commit-hint").textContent = "AI 生成失败:" + e;
+  } finally {
+    setButtonLoading($("btn-regen"), false);
   }
-  setBusy(false);
 }
 
 async function doCommit() {
   const msg = $("commit-msg").value.trim();
   if (!msg) { toast("提交信息不能为空", false); return; }
   $("dlg-commit").classList.add("hidden");
-  await runBusy("git_commit", { repo, message: msg }, "提交中…", "提交成功");
+  // 弹窗关闭后,在工具栏提交按钮上体现加载状态
+  setButtonLoading($("btn-commit"), true, "提交中…");
+  try {
+    await invoke("git_commit", { repo, message: msg });
+    toast("提交成功", true);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading($("btn-commit"), false);
+  }
   await refresh();
 }
 
 async function pushPull(kind) {
-  const label = kind === "push" ? "推送" : "拉取";
-  setBusy(true, `${label}中…`);
+  const btn = kind === "push" ? $("btn-push") : $("btn-pull");
+  setButtonLoading(btn, true, kind === "push" ? "推送中…" : "拉取中…");
   try {
     const r = await invoke(kind === "push" ? "git_push" : "git_pull", { repo });
     toast(r.output, r.ok);
@@ -571,7 +610,7 @@ async function pushPull(kind) {
     if (kind === "push" && String(e).includes("[NEED_AUTH]")) askGithubToken();
     else toast(String(e), false);
   } finally {
-    setBusy(false);
+    setButtonLoading(btn, false);
   }
   await refresh();
   // 冲突只在拉取后提示,由用户决定是否用 AI 自动解决
@@ -590,7 +629,15 @@ async function submitGithubToken() {
   const token = $("set-gh-token").value.trim();
   if (!token) { toast("Token 不能为空", false); return; }
   $("dlg-token").classList.add("hidden");
-  const r = await runBusy("git_push_with_token", { repo, token }, "创建远程仓库中…");
+  setButtonLoading($("btn-token-confirm"), true, "连接中…");
+  try {
+    const r = await invoke("git_push_with_token", { repo, token });
+    if (r && r.ok === false) toast(r.output, false);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading($("btn-token-confirm"), false);
+  }
   await refresh();
 }
 
@@ -701,9 +748,19 @@ async function openBranchDialog() {
 
 async function switchBranch(name) {
   $("dlg-branch").classList.add("hidden");
-  const r = await runBusy("git_checkout", { repo, branch: name }, "切换分支中…");
+  setButtonLoading($("btn-branch"), true, "切换中…");
+  let ok = false;
+  try {
+    const r = await invoke("git_checkout", { repo, branch: name });
+    ok = r && r.ok;
+    if (!ok) toast(r.output, false);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading($("btn-branch"), false);
+  }
   await refresh();
-  if (r && r.ok) toast("已切换到 " + name, true);
+  if (ok) toast("已切换到 " + name, true);
 }
 
 /* ===== 设置 ===== */
@@ -803,6 +860,21 @@ function setBusy(v, text) {
   ["btn-branch", "btn-stage-all", "btn-unstage-all", "btn-commit", "btn-push", "btn-pull", "btn-more"].forEach((id) => {
     $(id).disabled = v;
   });
+}
+
+/* 按钮级加载状态:按钮内显示 spinner + 文案,并隐藏全局忙碌指示 */
+function setButtonLoading(btn, loading, text) {
+  if (loading) {
+    btn.dataset.orig = btn.innerHTML;
+    btn.classList.add("loading");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-spinner"></span>' + (text || "");
+    $("sb-busy").classList.add("hidden");
+  } else {
+    btn.classList.remove("loading");
+    if (btn.dataset.orig !== undefined) btn.innerHTML = btn.dataset.orig;
+    delete btn.dataset.orig;
+  }
 }
 
 function toast(msg, ok) {
