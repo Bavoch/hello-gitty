@@ -214,6 +214,11 @@
         <textarea id="set-custom-prompt" rows="7" placeholder="在这里编写你自己的提示词模板…"></textarea>
       </label>
       <p class="dlg-hint">模板占位符:<code>{diff}</code> 变更差异 · <code>{log}</code> 仓库历史风格 · <code>{lang}</code> 语言指令</p>
+      <label class="field">
+        <span>GitHub Token(自动创建远程仓库)</span>
+        <input id="set-github-token" type="password" placeholder="ghp_…" />
+      </label>
+      <p class="dlg-hint">推送时若项目还没有远程仓库,将自动创建 GitHub 私有仓库并推送。Token 仅保存在本机。</p>
       <p class="dlg-hint">兼容任何 OpenAI 格式的服务(OpenAI、DeepSeek、通义等),Key 仅保存在本机。</p>
       <div class="dlg-actions">
         <span class="spacer"></span>

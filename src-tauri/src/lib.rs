@@ -203,8 +203,65 @@ async fn git_commit(repo: String, message: String) -> OpResult {
 }
 
 #[tauri::command]
-async fn git_push(repo: String) -> OpResult {
-    op(tauri::async_runtime::spawn_blocking(move || git::push(&repo)).await.unwrap_or_else(|e| Err(e.to_string())))
+async fn git_push(app: tauri::AppHandle, repo: String) -> OpResult {
+    // 已配置 origin 的仓库走普通推送
+    if git::run_git(&repo, &["remote", "get-url", "origin"]).is_ok() {
+        return op(
+            tauri::async_runtime::spawn_blocking(move || git::push(&repo))
+                .await
+                .unwrap_or_else(|e| Err(e.to_string())),
+        );
+    }
+    // 无远程仓库:配置了 GitHub Token 则自动创建私有仓库并推送
+    let settings = SettingsStore::new(&app).load();
+    let token = settings.github_token.unwrap_or_default();
+    if token.trim().is_empty() {
+        return op(Err(
+            "还没有远程仓库。在设置页配置 GitHub Token 后,推送将自动创建远程仓库。".into(),
+        ));
+    }
+    match auto_create_and_push(&repo, token.trim()).await {
+        Ok(o) => op(Ok(format!("已自动创建远程仓库并推送\n{o}"))),
+        Err(e) => op(Err(e)),
+    }
+}
+
+/// 用 GitHub API 创建私有仓库 → 关联 origin → 推送
+async fn auto_create_and_push(repo: &str, token: &str) -> Result<String, String> {
+    let name = std::path::Path::new(repo)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| "无法从路径确定仓库名".to_string())?;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://api.github.com/user/repos")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "Hello-Gitty")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .json(&serde_json::json!({ "name": name, "private": true, "auto_init": false }))
+        .send()
+        .await
+        .map_err(|e| format!("请求 GitHub API 失败: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("GitHub 创建仓库失败({status}): {text}"));
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|_| "GitHub 响应解析失败".to_string())?;
+    let clone_url = v
+        .pointer("/clone_url")
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| "仓库已创建但无法获取地址".to_string())?;
+
+    // 关联 origin(已存在则更新地址)
+    let _ = git::run_git(repo, &["remote", "remove", "origin"]);
+    git::run_git(repo, &["remote", "add", "origin", clone_url])?;
+    // push -u origin <branch>(git::push 内部处理无上游的情况)
+    git::push(repo)
 }
 
 #[tauri::command]

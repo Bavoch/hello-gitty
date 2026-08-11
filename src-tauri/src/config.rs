@@ -12,6 +12,9 @@ pub struct Settings {
     /// 仓库列表(多仓库管理,顺序即展示顺序)
     #[serde(default)]
     pub repos: Vec<String>,
+    /// GitHub Token(推送时自动创建远程仓库用),仅存本机
+    #[serde(default)]
+    pub github_token: Option<String>,
 }
 
 pub struct SettingsStore {

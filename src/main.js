@@ -572,6 +572,7 @@ async function openSettings() {
   $("set-lang").value = settings.ai.lang || "中文";
   $("set-commit-mode").value = settings.ai.commit_mode || "auto";
   $("set-custom-prompt").value = settings.ai.custom_prompt || "";
+  $("set-github-token").value = settings.github_token || "";
 
   // 加载内置提示词预设
   try { promptPresets = await invoke("ai_presets"); } catch (_) { promptPresets = []; }
@@ -629,6 +630,7 @@ async function saveSettings() {
     prompt_preset: $("set-prompt-preset").value,
     custom_prompt: $("set-custom-prompt").value,
   };
+  settings.github_token = $("set-github-token").value.trim() || null;
   try {
     await invoke("settings_save", { settings });
     closeSettings();
