@@ -118,7 +118,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   padding: 8px 10px 6px; font-size: 11px; text-transform: uppercase;
   letter-spacing: .4px; color: var(--text-dim);
 }
-.sidebar-head .icon-btn { width: 22px; height: 22px; }
+.sidebar-head .icon-btn { width: 26px; height: 26px; }
 #repo-list { list-style: none; overflow-y: auto; flex: 1; }
 .repo-item {
   padding: 4px 10px; cursor: pointer; border-left: 2px solid transparent;
@@ -176,7 +176,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
 }
 .section-head:hover { background: var(--hover); }
-.caret { font-size: 10px; transition: transform .12s; }
+.caret {
+  font-size: 12px; line-height: 1; display: inline-flex; align-items: center;
+  width: 14px; height: 14px; flex: none; transition: transform .12s;
+}
 .section.collapsed .caret { transform: rotate(-90deg); }
 .count { margin-left: auto; color: var(--text-dim); font-size: 11px; }
 .section-actions { display: none; padding: 4px 12px 6px; background: var(--panel); }
