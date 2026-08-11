@@ -224,7 +224,7 @@ function setToolbarEnabled(enabled) {
 function updateToolbar(st) {
   const canStage = st.unstaged.length + st.untracked.length > 0;
   const canUnstage = st.staged.length > 0;
-  const canCommit = st.staged.length + st.unstaged.length + st.untracked.length > 0;
+  const canCommit = st.staged.length > 0; // 只提交已暂存内容
   $("btn-stage-all").disabled = busy || !canStage;
   $("btn-unstage-all").disabled = busy || !canUnstage;
   $("btn-commit").disabled = busy || !canCommit;
@@ -302,8 +302,14 @@ async function toggleStage(path, unstage) {
 }
 
 async function onCommit() {
-  setBusy(true, "暂存全部修改…");
-  try { await invoke("git_stage_all", { repo }); } catch (e) { toast(String(e), false); setBusy(false); return; }
+  // 提交只针对已暂存内容,不再自动暂存全部
+  const st = await invoke("git_status", { repo });
+  if (st.staged.length === 0) {
+    toast(st.unstaged.length + st.untracked.length > 0
+      ? "没有已暂存的更改,请先点击「全部暂存」"
+      : "没有可提交的更改", false);
+    return;
+  }
 
   let msg = "";
   try {

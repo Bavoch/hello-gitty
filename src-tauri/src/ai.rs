@@ -166,7 +166,8 @@ fn clean_markdown(s: String) -> String {
 }
 
 pub async fn generate_commit_message(cfg: &AiConfig, repo: &str) -> Result<String, String> {
-    let diff = git::diff_for_ai(repo)?;
+    // 提交语义:只提交已暂存内容,AI 信息基于暂存差异
+    let diff = git::diff_for_ai(repo, true)?;
     let log = git::recent_log(repo, 8);
     let log_hint = if log.is_empty() {
         String::new()

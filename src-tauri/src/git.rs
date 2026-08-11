@@ -276,20 +276,15 @@ pub fn pull(repo: &str) -> Result<String, String> {
     run_git(repo, &["pull"])
 }
 
-/// 供 AI 生成提交信息用的差异文本(暂存 + 未暂存,含未跟踪文件清单)
-pub fn diff_for_ai(repo: &str) -> Result<String, String> {
+/// 供 AI 生成提交信息用的差异文本。
+/// staged_only = true 时只采集已暂存差异(提交语义:只提交已暂存内容,信息须与实际提交一致);
+/// false 时采集暂存 + 未暂存 + 未跟踪文件清单。
+pub fn diff_for_ai(repo: &str, staged_only: bool) -> Result<String, String> {
     let st = status(repo);
     let mut buf = String::new();
     if let Ok(s) = run_git(repo, &["diff", "--cached", "--no-color", "--no-ext-diff", "--stat"]) {
         if !s.trim().is_empty() {
             buf.push_str("## 已暂存变更(stat)\n");
-            buf.push_str(&s);
-            buf.push('\n');
-        }
-    }
-    if let Ok(s) = run_git(repo, &["diff", "--no-color", "--no-ext-diff", "--stat"]) {
-        if !s.trim().is_empty() {
-            buf.push_str("## 未暂存变更(stat)\n");
             buf.push_str(&s);
             buf.push('\n');
         }
@@ -301,21 +296,34 @@ pub fn diff_for_ai(repo: &str) -> Result<String, String> {
             buf.push('\n');
         }
     }
-    if let Ok(s) = run_git(repo, &["diff", "--no-color", "--no-ext-diff"]) {
-        if !s.trim().is_empty() {
-            buf.push_str("## 未暂存完整差异\n");
-            buf.push_str(&s);
-            buf.push('\n');
+    if !staged_only {
+        if let Ok(s) = run_git(repo, &["diff", "--no-color", "--no-ext-diff", "--stat"]) {
+            if !s.trim().is_empty() {
+                buf.push_str("## 未暂存变更(stat)\n");
+                buf.push_str(&s);
+                buf.push('\n');
+            }
         }
-    }
-    if !st.untracked.is_empty() {
-        buf.push_str("## 未跟踪的新文件(尚未有差异)\n");
-        for f in &st.untracked {
-            buf.push_str(&format!("- {}\n", f.path));
+        if let Ok(s) = run_git(repo, &["diff", "--no-color", "--no-ext-diff"]) {
+            if !s.trim().is_empty() {
+                buf.push_str("## 未暂存完整差异\n");
+                buf.push_str(&s);
+                buf.push('\n');
+            }
+        }
+        if !st.untracked.is_empty() {
+            buf.push_str("## 未跟踪的新文件(尚未有差异)\n");
+            for f in &st.untracked {
+                buf.push_str(&format!("- {}\n", f.path));
+            }
         }
     }
     if buf.trim().is_empty() {
-        return Err("没有可提交的变更".into());
+        return Err(if staged_only {
+            "没有已暂存的更改".into()
+        } else {
+            "没有可提交的变更".into()
+        });
     }
     // 超出上限时保留 stat 与尾部内容
     if buf.len() > MAX_AI_DIFF_BYTES {
@@ -426,8 +434,13 @@ mod tests {
         assert!(st.staged.iter().any(|f| f.path == "带 空格 文件.txt"));
 
         // diff_for_ai 可用
-        let d = diff_for_ai(r).unwrap();
+        let d = diff_for_ai(r, false).unwrap();
         assert!(!d.is_empty());
+        // staged-only:取消暂存 b.txt 后,暂存 diff 应含 a.txt 而不含 b.txt
+        unstage_file(r, "b.txt").unwrap();
+        let d_staged = diff_for_ai(r, true).unwrap();
+        assert!(d_staged.contains("a.txt"));
+        assert!(!d_staged.contains("b.txt"));
 
         std::fs::remove_dir_all(repo).ok();
     }
