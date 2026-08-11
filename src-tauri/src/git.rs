@@ -393,6 +393,22 @@ pub fn first_remote_branch(repo: &str) -> Option<String> {
         .find(|l| !l.is_empty() && l != "origin/HEAD")
 }
 
+/// 本地领先远程的提交数(remote..HEAD)
+pub fn ahead_count(repo: &str, remote_ref: &str) -> i64 {
+    run_git(repo, &["rev-list", "--count", &format!("{remote_ref}..HEAD")])
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// 远程领先本地的提交数(HEAD..remote)
+pub fn behind_count(repo: &str, remote_ref: &str) -> i64 {
+    run_git(repo, &["rev-list", "--count", &format!("HEAD..{remote_ref}")])
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
 pub fn head_hash(repo: &str) -> Option<String> {
     run_git(repo, &["rev-parse", "HEAD"])
         .ok()
@@ -605,6 +621,14 @@ mod tests {
         assert_eq!(remote_log[0].subject, "local commit");
         // 兜底发现远程分支(upstream 缺失场景)
         assert_eq!(first_remote_branch(r).as_deref(), Some("origin/master"));
+        // ahead/behind:同步后均为 0
+        assert_eq!(ahead_count(r, "origin/master"), 0);
+        assert_eq!(behind_count(r, "origin/master"), 0);
+        // 本地新增一个提交 → ahead = 1
+        std::fs::write(repo.join("a.txt"), "v2").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "local only").unwrap();
+        assert_eq!(ahead_count(r, "origin/master"), 1);
 
         std::fs::remove_dir_all(repo).ok();
         std::fs::remove_dir_all(bare).ok();

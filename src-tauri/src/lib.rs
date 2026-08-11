@@ -152,31 +152,37 @@ struct History {
     remote: Option<RemoteHistory>,
 }
 
-/// 内部 git 调用并行执行,减少切换/刷新延迟
+/// 内部 git 调用并行执行,减少切换/刷新延迟。
+/// 本地/远程各取 20 条,但按 ahead/behind 调整窗口,使两侧下界对齐,
+/// 避免"最早的提交只在远程显示"的窗口错位假象。
 #[tauri::command]
 async fn git_history(repo: String) -> History {
     use tauri::async_runtime::spawn_blocking;
     let r1 = repo.clone();
     let r2 = repo.clone();
-    let r3 = repo.clone();
     let head_job = spawn_blocking(move || git::head_hash(&r1));
     let upstream_job = spawn_blocking(move || git::upstream(&r2));
-    let log_job = spawn_blocking(move || git::log(&r3, 20));
     let head = head_job.await.ok().flatten();
     let upstream = upstream_job.await.ok().flatten();
-    let commits = log_job.await.unwrap_or_default();
     // 远程日志来源:优先 upstream;未设置上游时兜底取第一个远程跟踪分支
     let remote_name = upstream.or_else(|| git::first_remote_branch(&repo));
-    let remote = match remote_name {
+    let (commits, remote) = match remote_name {
         Some(name) => {
+            // 窗口对齐:本地起点偏移 ahead,远程起点偏移 behind,取相同跨度
+            let ahead = git::ahead_count(&repo, &name);
+            let behind = git::behind_count(&repo, &name);
+            let local_n = ((20 + ahead).clamp(20, 500)) as usize;
+            let remote_n = ((20 + behind).clamp(20, 500)) as usize;
+            let r3 = repo.clone();
             let r4 = repo.clone();
-            let n = name.clone();
-            let commits = spawn_blocking(move || git::log_ref(&r4, &n, 20))
-                .await
-                .unwrap_or_default();
-            Some(RemoteHistory { name, commits })
+            let n2 = name.clone();
+            let local_job = spawn_blocking(move || git::log_ref(&r3, "HEAD", local_n));
+            let remote_job = spawn_blocking(move || git::log_ref(&r4, &n2, remote_n));
+            let commits = local_job.await.unwrap_or_default();
+            let remote_commits = remote_job.await.unwrap_or_default();
+            (commits, Some(RemoteHistory { name, commits: remote_commits }))
         }
-        None => None,
+        None => (git::log(&repo, 20), None),
     };
     History { head, commits, remote }
 }
