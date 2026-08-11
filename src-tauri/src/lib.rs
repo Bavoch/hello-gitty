@@ -51,50 +51,53 @@ struct RepoSummary {
     icon: Option<String>,
 }
 
-/// 常见项目图标文件名(忽略大小写)
-const ICON_NAMES: &[&str] = &[
+/// 图标候选位置(相对项目根目录,按优先级;忽略大小写)
+const ICON_LOCATIONS: &[&str] = &[
     "logo.png", "logo.jpg", "logo.jpeg", "logo.svg", "logo.webp", "logo.gif",
     "icon.png", "icon.jpg", "icon.svg", "icon.ico",
     "app-icon.png", "appicon.png", "app.png", "favicon.png",
+    // 常见子目录位置(Tauri / 前端 / 桌面应用)
+    "src-tauri/icons/icon.png",
+    "src-tauri/icons/icon.ico",
+    "assets/logo.png", "assets/icon.png", "assets/logo.svg", "assets/icon.svg",
+    "src/assets/logo.png", "src/assets/icon.png", "src/assets/logo.svg",
+    "public/favicon.ico", "public/logo.png", "public/logo.svg",
+    "app/icon.png", "app/logo.png",
 ];
 
-/// 读取项目根目录的图标文件,转为 base64 data URL;找不到返回 None
+/// 通用项目兜底图标(灰色文件夹)
+const FALLBACK_ICON_SVG: &str = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='#8a8a8a' d='M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z'/></svg>";
+
+/// 读取项目图标文件,转为 base64 data URL;
+/// 找不到真实图标时返回通用文件夹图标(保证每个项目都有图标)
 fn repo_icon_data_url(repo: &str) -> Option<String> {
-    let mut found: Option<std::path::PathBuf> = None;
-    for entry in std::fs::read_dir(repo).ok()?.flatten() {
-        let p = entry.path();
-        if p.is_file() {
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            if ICON_NAMES.contains(&name.as_str()) {
-                found = Some(p);
-                break;
-            }
-        }
-    }
-    let path = found?;
-    let data = std::fs::read(&path).ok()?;
-    if data.is_empty() || data.len() > 512 * 1024 {
-        return None;
-    }
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let mime = match ext.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "svg" => "image/svg+xml",
-        "gif" => "image/gif",
-        "ico" => "image/x-icon",
-        "webp" => "image/webp",
-        _ => "application/octet-stream",
-    };
     use base64::Engine as _;
-    Some(format!(
-        "data:{mime};base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(data)
-    ))
+    let b64 = |data: &[u8]| base64::engine::general_purpose::STANDARD.encode(data);
+    let repo_path = std::path::Path::new(repo);
+    for loc in ICON_LOCATIONS {
+        let p = repo_path.join(loc);
+        let data = match std::fs::read(&p) {
+            Ok(d) if !d.is_empty() && d.len() <= 512 * 1024 => d,
+            _ => continue,
+        };
+        let ext = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let mime = match ext.as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "svg" => "image/svg+xml",
+            "gif" => "image/gif",
+            "ico" => "image/x-icon",
+            "webp" => "image/webp",
+            _ => "application/octet-stream",
+        };
+        return Some(format!("data:{mime};base64,{}", b64(&data)));
+    }
+    // 兜底:通用文件夹图标
+    Some(format!("data:image/svg+xml;base64,{}", b64(FALLBACK_ICON_SVG.as_bytes())))
 }
 
 fn summarize(path: &str) -> RepoSummary {
@@ -126,12 +129,19 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("hellogitty-icon-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        // 无图标 → None
-        assert!(repo_icon_data_url(dir.to_str().unwrap()).is_none());
-        // 放一个 icon.png → data URL
+        // 空目录 → 兜底文件夹图标
+        let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
+        assert!(url.starts_with("data:image/svg+xml;base64,"), "空目录应返回兜底图标");
+        // 根目录 icon.png → data URL
         std::fs::write(dir.join("icon.png"), vec![0x89, 0x50, 0x4e, 0x47]).unwrap();
         let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
         assert!(url.starts_with("data:image/png;base64,"));
+        std::fs::remove_file(dir.join("icon.png")).unwrap();
+        // 子目录 src-tauri/icons/icon.png → 也能找到(Tauri 项目)
+        std::fs::create_dir_all(dir.join("src-tauri/icons")).unwrap();
+        std::fs::write(dir.join("src-tauri/icons/icon.png"), vec![0x89, 0x50, 0x4e, 0x47]).unwrap();
+        let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
+        assert!(url.starts_with("data:image/png;base64,"), "子目录图标应被发现");
         std::fs::remove_dir_all(&dir).ok();
     }
 }
