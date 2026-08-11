@@ -4,7 +4,7 @@ const { listen } = window.__TAURI__.event;
 
 const $ = (id) => document.getElementById(id);
 
-const DEFAULT_AI = { base_url: "https://api.openai.com/v1", api_key: "", model: "gpt-4o-mini", lang: "中文", prompt_preset: "conventional", custom_prompt: "" };
+const DEFAULT_AI = { base_url: "https://api.openai.com/v1", api_key: "", model: "gpt-4o-mini", lang: "中文", commit_mode: "auto", prompt_preset: "conventional", custom_prompt: "" };
 const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" };
 
 let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [] };
@@ -306,15 +306,27 @@ async function onCommit() {
   try { await invoke("git_stage_all", { repo }); } catch (e) { toast(String(e), false); setBusy(false); return; }
 
   let msg = "";
-  let hint = "AI 未能生成提交信息,请手动填写:";
   try {
     setBusy(true, "AI 撰写提交信息…");
     msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
-    hint = "AI 已生成,可修改后提交";
+    // 直接提交模式:AI 生成后立即提交
+    if (settings.ai.commit_mode === "auto") {
+      await invoke("git_commit", { repo, message: msg });
+      toast("提交成功", true);
+      setBusy(false);
+      await refresh();
+      return;
+    }
+    showCommitDialog(msg, "AI 已生成,可修改后提交");
   } catch (e) {
-    hint = "AI 生成失败:" + e + " 请手动填写:";
+    // AI 失败(如未配 Key):回退到手动填写确认,保证提交可用
+    showCommitDialog("", "AI 生成失败:" + e + " 请手动填写:");
+  } finally {
+    setBusy(false);
   }
-  setBusy(false);
+}
+
+function showCommitDialog(msg, hint) {
   $("commit-msg").value = msg;
   $("commit-hint").textContent = hint;
   $("dlg-commit").classList.remove("hidden");
@@ -411,6 +423,7 @@ async function openSettings() {
   $("set-api-key").value = settings.ai.api_key || "";
   $("set-model").value = settings.ai.model || DEFAULT_AI.model;
   $("set-lang").value = settings.ai.lang || "中文";
+  $("set-commit-mode").value = settings.ai.commit_mode || "auto";
   $("set-custom-prompt").value = settings.ai.custom_prompt || "";
 
   // 加载内置提示词预设
@@ -465,6 +478,7 @@ async function saveSettings() {
     api_key: $("set-api-key").value.trim(),
     model: $("set-model").value.trim() || DEFAULT_AI.model,
     lang: $("set-lang").value,
+    commit_mode: $("set-commit-mode").value,
     prompt_preset: $("set-prompt-preset").value,
     custom_prompt: $("set-custom-prompt").value,
   };

@@ -166,6 +166,13 @@
         <input id="set-model" type="text" placeholder="gpt-4o-mini" />
       </label>
       <label class="field">
+        <span>提交模式</span>
+        <select id="set-commit-mode">
+          <option value="auto">直接提交(AI 生成后自动提交)</option>
+          <option value="confirm">确认后提交(生成后展示,可修改)</option>
+        </select>
+      </label>
+      <label class="field">
         <span>提交信息语言</span>
         <select id="set-lang">
           <option value="中文">中文</option>

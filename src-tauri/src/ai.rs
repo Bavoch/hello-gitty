@@ -11,12 +11,19 @@ pub struct AiConfig {
     pub model: String,
     /// 提交信息语言:"中文" 或 "英文"
     pub lang: String,
+    /// 提交模式:"auto" 直接提交(AI 生成后自动提交) / "confirm" 生成后展示确认
+    #[serde(default = "default_commit_mode")]
+    pub commit_mode: String,
     /// 提交信息提示词预设 id("custom" 表示使用 custom_prompt)
     #[serde(default = "default_preset")]
     pub prompt_preset: String,
     /// 自定义提示词模板(占位符:{diff} {log} {lang})
     #[serde(default)]
     pub custom_prompt: String,
+}
+
+fn default_commit_mode() -> String {
+    "auto".into()
 }
 
 fn default_preset() -> String {
@@ -30,6 +37,7 @@ impl Default for AiConfig {
             api_key: String::new(),
             model: "gpt-4o-mini".into(),
             lang: "中文".into(),
+            commit_mode: default_commit_mode(),
             prompt_preset: default_preset(),
             custom_prompt: String::new(),
         }
@@ -259,5 +267,10 @@ mod tests {
     fn lang_instruction_both() {
         assert!(lang_instruction("中文").contains("简体中文"));
         assert!(lang_instruction("英文").contains("English"));
+    }
+
+    #[test]
+    fn default_commit_mode_is_auto() {
+        assert_eq!(AiConfig::default().commit_mode, "auto");
     }
 }
