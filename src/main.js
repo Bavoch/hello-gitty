@@ -193,11 +193,38 @@ async function refresh() {
 /* ===== 历史 ===== */
 async function renderHistory() {
   const h = await invoke("git_history", { repo });
-  const ul = $("history-list");
-  ul.innerHTML = "";
+  const box = $("history-container");
+  box.innerHTML = "";
   $("history-count").textContent = h.commits.length;
-  for (const c of h.commits) {
-    const isHead = c.hash === h.head;
+
+  // 本地组
+  box.appendChild(groupTitle("本地 · " + (h.branch || "(无分支)")));
+  box.appendChild(buildHistoryList(h.commits, h.head));
+
+  // 远程组(上游分支)
+  if (h.remote && h.remote.commits.length) {
+    box.appendChild(groupTitle(h.remote.name, true));
+    box.appendChild(buildHistoryList(h.remote.commits, null));
+  } else {
+    const none = document.createElement("div");
+    none.className = "history-none";
+    none.textContent = "无远程分支(未设置上游)";
+    box.appendChild(none);
+  }
+}
+
+function groupTitle(text, remote) {
+  const t = document.createElement("div");
+  t.className = "history-group-title" + (remote ? " remote" : "");
+  t.textContent = text;
+  return t;
+}
+
+function buildHistoryList(commits, headHash) {
+  const ul = document.createElement("ul");
+  ul.className = "history-list";
+  for (const c of commits) {
+    const isHead = headHash && c.hash === headHash;
     const li = document.createElement("li");
     li.className = "history-item" + (isHead ? " is-head" : "");
     li.title = c.hash + " · " + c.author;
@@ -241,6 +268,7 @@ async function renderHistory() {
 
     ul.appendChild(li);
   }
+  return ul;
 }
 
 function relTime(ts) {

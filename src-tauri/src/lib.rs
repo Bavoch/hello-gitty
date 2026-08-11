@@ -138,18 +138,33 @@ async fn window_set_always_on_top(app: tauri::AppHandle, on: bool) -> Result<(),
     Ok(())
 }
 
-/// 历史列表 + 当前 HEAD
+/// 历史列表(本地 + 远程上游)+ 当前 HEAD
+#[derive(Serialize)]
+struct RemoteHistory {
+    name: String,
+    commits: Vec<git::CommitInfo>,
+}
+
 #[derive(Serialize)]
 struct History {
     head: Option<String>,
+    branch: Option<String>,
     commits: Vec<git::CommitInfo>,
+    remote: Option<RemoteHistory>,
 }
 
 #[tauri::command]
 fn git_history(repo: String) -> History {
+    let branch = git::status(&repo).branch;
+    let remote = git::upstream(&repo).map(|name| RemoteHistory {
+        commits: git::log_ref(&repo, &name, 20),
+        name,
+    });
     History {
         head: git::head_hash(&repo),
+        branch,
         commits: git::log(&repo, 20),
+        remote,
     }
 }
 

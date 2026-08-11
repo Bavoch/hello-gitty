@@ -350,9 +350,14 @@ pub struct CommitInfo {
     pub subject: String,
 }
 
-/// 历史列表(按时间倒序)
+/// 历史列表(按时间倒序,HEAD 当前分支)
 pub fn log(repo: &str, n: usize) -> Vec<CommitInfo> {
-    run_git(repo, &["log", &format!("-{n}"), "--format=%H%x09%h%x09%an%x09%at%x09%s"])
+    log_ref(repo, "HEAD", n)
+}
+
+/// 指定 ref(分支/远程分支)的历史
+pub fn log_ref(repo: &str, r: &str, n: usize) -> Vec<CommitInfo> {
+    run_git(repo, &["log", &format!("-{n}"), r, "--format=%H%x09%h%x09%an%x09%at%x09%s"])
         .map(|o| {
             o.lines()
                 .filter_map(|l| {
@@ -368,6 +373,14 @@ pub fn log(repo: &str, n: usize) -> Vec<CommitInfo> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// 当前分支的上游(远程跟踪分支),如 "origin/main";无上游返回 None
+pub fn upstream(repo: &str) -> Option<String> {
+    run_git(repo, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 pub fn head_hash(repo: &str) -> Option<String> {
@@ -555,5 +568,33 @@ mod tests {
         assert_eq!(commits2[0].subject, "first");
         assert_eq!(head_hash(r).as_deref(), Some(commits2[0].hash.as_str()));
         std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn upstream_and_remote_log() {
+        // 建裸仓库作远程
+        let bare = std::env::temp_dir().join(format!("hellogitty-test-bare-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&bare);
+        std::fs::create_dir_all(&bare).unwrap();
+        run_git(bare.to_str().unwrap(), &["init", "-q", "--bare"]).unwrap();
+
+        let repo = temp_repo("upstream");
+        let r = repo.to_str().unwrap();
+        assert!(upstream(r).is_none(), "未设置上游时返回 None");
+
+        std::fs::write(repo.join("a.txt"), "v1").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "local commit").unwrap();
+        run_git(r, &["remote", "add", "origin", bare.to_str().unwrap()]).unwrap();
+        run_git(r, &["push", "-u", "-q", "origin", "master"]).unwrap();
+
+        let up = upstream(r);
+        assert_eq!(up.as_deref(), Some("origin/master"));
+        let remote_log = log_ref(r, "origin/master", 10);
+        assert_eq!(remote_log.len(), 1);
+        assert_eq!(remote_log[0].subject, "local commit");
+
+        std::fs::remove_dir_all(repo).ok();
+        std::fs::remove_dir_all(bare).ok();
     }
 }

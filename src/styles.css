@@ -205,6 +205,18 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ===== 历史列表 ===== */
+.history-group-title {
+  font-size: 10.5px; color: var(--text-dim);
+  padding: 5px 12px 3px 34px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px;
+}
+.history-group-title:first-child { border-top: none; }
+.history-group-title.remote::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: #8b5cf6; flex: none;
+}
+.history-group-title.remote { color: #a5a8ff; }
+.history-none { padding: 4px 12px 8px 34px; font-size: 11px; color: var(--text-dim); }
 .history-list { list-style: none; }
 .history-list:empty { display: none; }
 .history-item {
