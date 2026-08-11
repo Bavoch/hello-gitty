@@ -184,16 +184,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .row-actions .resolve { color: var(--orange); }
 .row-actions .resolve:hover { background: #cc783233; }
 
-/* ===== 状态栏 ===== */
-#statusbar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 4px 12px; background: var(--accent); color: #fff; font-size: 11px;
+/* ===== 忙碌指示 ===== */
+.busy-ind {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: auto; font-size: 12px; color: var(--text-dim);
 }
-#sb-branch { font-family: var(--mono); font-weight: 600; }
-#sb-branch:empty { display: none; }
-#sb-ab:empty { display: none; }
 .spinner {
-  width: 11px; height: 11px; border: 2px solid #ffffff66; border-top-color: #fff;
+  width: 11px; height: 11px; border: 2px solid var(--text-dim); border-top-color: transparent;
   border-radius: 50%; display: inline-block; animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }

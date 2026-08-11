@@ -190,20 +190,12 @@ function showEmpty(showInit) {
   $("panel").classList.add("hidden");
   $("empty-state").classList.remove("hidden");
   $("btn-init").classList.toggle("hidden", !showInit);
-  $("sb-branch").textContent = "";
-  $("sb-ab").textContent = "";
-  $("sb-status").textContent = showInit ? "该文件夹还不是 Git 仓库" : "等待选择仓库";
   setToolbarEnabled(false);
 }
 
 function showPanel(st) {
   $("empty-state").classList.add("hidden");
   $("panel").classList.remove("hidden");
-
-  $("sb-branch").textContent = st.detached ? "(分离 HEAD)" : st.branch || "(无分支)";
-  $("sb-ab").textContent =
-    st.ahead || st.behind ? `${st.ahead ? "⇡" + st.ahead : ""}${st.behind ? " ⇣" + st.behind : ""}` : "";
-  $("sb-status").textContent = `${st.staged.length} 暂存 · ${st.unstaged.length + st.untracked.length} 更改`;
 
   renderList("conflict-list", st.conflicts, "conflict", $("conflict-count"));
   renderList("staged-list", st.staged, "staged", $("staged-count"));

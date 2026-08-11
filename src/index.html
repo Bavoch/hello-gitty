@@ -42,6 +42,9 @@
         <button id="btn-commit" class="tool-btn primary" disabled>提交</button>
         <button id="btn-push" class="tool-btn" disabled>推送</button>
         <button id="btn-pull" class="tool-btn" disabled>拉取</button>
+        <span class="busy-ind hidden" id="sb-busy">
+          <span class="spinner"></span><span id="sb-busy-text">处理中…</span>
+        </span>
         <button id="btn-refresh" class="icon-btn" title="刷新">
           <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35Z"/></svg>
         </button>
@@ -95,16 +98,6 @@
       </div>
     </div>
   </main>
-
-  <footer id="statusbar">
-    <span id="sb-branch" title="当前分支"></span>
-    <span id="sb-ab"></span>
-    <span class="spacer"></span>
-    <span id="sb-status"></span>
-    <span id="sb-busy" class="hidden">
-      <span class="spinner"></span><span id="sb-busy-text">处理中…</span>
-    </span>
-  </footer>
 
   <!-- 提交信息对话框 -->
   <div class="overlay hidden" id="dlg-commit">
