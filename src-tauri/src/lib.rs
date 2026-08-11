@@ -165,8 +165,9 @@ async fn git_history(repo: String) -> History {
     let head = head_job.await.ok().flatten();
     let upstream = upstream_job.await.ok().flatten();
     let commits = log_job.await.unwrap_or_default();
-    // 远程日志依赖 upstream 结果,只能串行
-    let remote = match upstream {
+    // 远程日志来源:优先 upstream;未设置上游时兜底取第一个远程跟踪分支
+    let remote_name = upstream.or_else(|| git::first_remote_branch(&repo));
+    let remote = match remote_name {
         Some(name) => {
             let r4 = repo.clone();
             let n = name.clone();
@@ -338,10 +339,17 @@ fn auto_create_via_gh(repo: &str) -> Result<String, String> {
         .map(|n| n.to_string_lossy().to_string())
         .filter(|n| !n.is_empty())
         .ok_or_else(|| "无法从路径确定仓库名".to_string())?;
-    run_gh(&[
+    let out = run_gh(&[
         "repo", "create", &name, "--private", "--source", repo, "--remote", "origin", "--push",
     ])
-    .map_err(|e| format!("GitHub CLI 创建失败: {e}"))
+    .map_err(|e| format!("GitHub CLI 创建失败: {e}"))?;
+    // gh 的 --push 可能不设置上游,补一次 push -u,保证远程历史/后续推送正常
+    if git::upstream(repo).is_none() {
+        if let Some(branch) = git::status(repo).branch {
+            let _ = git::run_git(repo, &["push", "-u", "origin", &branch]);
+        }
+    }
+    Ok(out)
 }
 
 fn gh_authed() -> bool {

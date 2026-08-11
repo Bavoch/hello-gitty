@@ -383,6 +383,16 @@ pub fn upstream(repo: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// 第一个远程跟踪分支(如 origin/master),排除符号引用 origin/HEAD;
+/// 用于 upstream 未设置时兜底展示远程历史
+pub fn first_remote_branch(repo: &str) -> Option<String> {
+    run_git(repo, &["for-each-ref", "--format=%(refname:short)", "refs/remotes"])
+        .ok()?
+        .lines()
+        .map(|l| l.trim().to_string())
+        .find(|l| !l.is_empty() && l != "origin/HEAD")
+}
+
 pub fn head_hash(repo: &str) -> Option<String> {
     run_git(repo, &["rev-parse", "HEAD"])
         .ok()
@@ -593,6 +603,8 @@ mod tests {
         let remote_log = log_ref(r, "origin/master", 10);
         assert_eq!(remote_log.len(), 1);
         assert_eq!(remote_log[0].subject, "local commit");
+        // 兜底发现远程分支(upstream 缺失场景)
+        assert_eq!(first_remote_branch(r).as_deref(), Some("origin/master"));
 
         std::fs::remove_dir_all(repo).ok();
         std::fs::remove_dir_all(bare).ok();
