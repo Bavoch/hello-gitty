@@ -261,6 +261,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   flex: 1; font-size: 11.5px; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; min-width: 0;
 }
+.h-time { font-size: 9.5px; color: var(--text-dim); flex: none; white-space: nowrap; }
 .rollback {
   font-size: 10px; color: var(--text); flex: none;
   padding: 1px 5px; border-radius: 3px;

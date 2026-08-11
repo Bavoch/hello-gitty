@@ -298,6 +298,12 @@ function cell(c, headHash) {
   msg.textContent = c.subject;
   div.appendChild(msg);
 
+  const time = document.createElement("span");
+  time.className = "h-time";
+  time.textContent = relTimeShort(c.timestamp);
+  time.title = relTime(c.timestamp);
+  div.appendChild(time);
+
   const rb = document.createElement("button");
   rb.className = "rollback";
   rb.textContent = "回退";
@@ -340,6 +346,17 @@ function relTime(ts) {
   if (s < 86400 * 30) return Math.floor(s / 86400) + " 天前";
   const d = new Date(ts * 1000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// 紧凑版相对时间(并排窄列用):刚刚 / 5分前 / 3时前 / 2天前 / 8-01
+function relTimeShort(ts) {
+  const s = Math.floor(Date.now() / 1000) - ts;
+  if (s < 60) return "刚刚";
+  if (s < 3600) return Math.floor(s / 60) + "分前";
+  if (s < 86400) return Math.floor(s / 3600) + "时前";
+  if (s < 86400 * 30) return Math.floor(s / 86400) + "天前";
+  const d = new Date(ts * 1000);
+  return `${d.getMonth() + 1}-${d.getDate()}`;
 }
 
 let resetHash = null;
