@@ -7,25 +7,6 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header id="topbar">
-    <div class="brand">
-      <svg class="logo" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-        <path fill="#89d185" d="M7 4a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm14 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM7 20a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"/>
-        <path fill="none" stroke="#89d185" stroke-width="1.6" d="M5 6v9a3 3 0 0 0 3 3h7"/>
-        <path fill="none" stroke="#89d185" stroke-width="1.6" d="M19 6v9a3 3 0 0 1-3 3h-4"/>
-      </svg>
-      <span class="app-name">Hello Gitty</span>
-    </div>
-    <div class="topbar-right">
-      <button id="btn-pin" class="icon-btn" title="窗口置顶">
-        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3Z"/></svg>
-      </button>
-      <button id="btn-settings" class="icon-btn" title="设置">
-        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 .1-1 7.6 7.6 0 0 0-.1-1l2.1-1.6a.5.5 0 0 0 .1-.7l-2-3.4a.5.5 0 0 0-.6-.2l-2.5 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5H9.2a.5.5 0 0 0-.5.5l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.4a.5.5 0 0 0 .1.7L3.6 11a7.6 7.6 0 0 0-.1 1 7.6 7.6 0 0 0 .1 1l-2.1 1.6a.5.5 0 0 0-.1.7l2 3.4c.1.3.4.4.6.2l2.5-1a7.7 7.7 0 0 0 1.7 1l.4 2.6c0 .3.3.5.5.5h4c.3 0 .5-.2.5-.5l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.5 1c.3.1.6 0 .6-.2l2-3.4a.5.5 0 0 0-.1-.7L19.4 13ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>
-      </button>
-    </div>
-  </header>
-
   <main id="workspace">
     <aside id="sidebar">
       <div class="sidebar-head">
@@ -36,6 +17,14 @@
       </div>
       <ul id="repo-list"></ul>
       <div id="sidebar-empty" class="sidebar-empty hidden">暂无仓库,点击 + 添加</div>
+      <div class="sidebar-footer">
+        <button id="btn-pin" class="icon-btn" title="窗口置顶">
+          <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3Z"/></svg>
+        </button>
+        <button id="btn-settings" class="icon-btn" title="设置">
+          <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 .1-1 7.6 7.6 0 0 0-.1-1l2.1-1.6a.5.5 0 0 0 .1-.7l-2-3.4a.5.5 0 0 0-.6-.2l-2.5 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5H9.2a.5.5 0 0 0-.5.5l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.4a.5.5 0 0 0 .1.7L3.6 11a7.6 7.6 0 0 0-.1 1 7.6 7.6 0 0 0 .1 1l-2.1 1.6a.5.5 0 0 0-.1.7l2 3.4c.1.3.4.4.6.2l2.5-1a7.7 7.7 0 0 0 1.7 1l.4 2.6c0 .3.3.5.5.5h4c.3 0 .5-.2.5-.5l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.5 1c.3.1.6 0 .6-.2l2-3.4a.5.5 0 0 0-.1-.7L19.4 13ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>
+        </button>
+      </div>
     </aside>
 
     <div id="content">
