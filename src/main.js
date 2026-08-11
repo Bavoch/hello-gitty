@@ -238,7 +238,9 @@ function renderHistory(h, branch) {
   lt.textContent = "本地 · " + (branch || "(无分支)");
   const rt = document.createElement("div");
   rt.className = "history-col-title remote";
-  rt.textContent = h.remote ? h.remote.name : "无远程";
+  // origin/ 前缀显示为「远程/」,非 origin 的远程保持原名
+  rt.textContent = h.remote ? h.remote.name.replace(/^origin\//, "远程/") : "无远程";
+  rt.title = h.remote ? h.remote.name : "";
   cols.append(lt, rt);
   box.appendChild(cols);
 
