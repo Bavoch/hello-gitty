@@ -48,9 +48,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 26px; border-radius: 4px; color: var(--text-dim);
 }
+.icon-btn svg { transition: transform .15s; }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
-/* 激活状态:常驻浅背景(不靠颜色) */
-.icon-btn.active { background: var(--hover); color: var(--text); }
+/* 置顶激活:主题色 + 图钉倾斜(斜着钉住) */
+.icon-btn.active { color: var(--accent); }
+.icon-btn.active:hover { color: var(--accent); background: #6366f11a; }
+.icon-btn.active svg { transform: rotate(45deg); }
 
 /* ===== 工具栏 ===== */
 #toolbar {
