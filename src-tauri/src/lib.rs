@@ -47,6 +47,54 @@ struct RepoSummary {
     unstaged: usize,
     conflicts: usize,
     is_repo: bool,
+    /// 项目图标(data URL),无图标则为 None
+    icon: Option<String>,
+}
+
+/// 常见项目图标文件名(忽略大小写)
+const ICON_NAMES: &[&str] = &[
+    "logo.png", "logo.jpg", "logo.jpeg", "logo.svg", "logo.webp", "logo.gif",
+    "icon.png", "icon.jpg", "icon.svg", "icon.ico",
+    "app-icon.png", "appicon.png", "app.png", "favicon.png",
+];
+
+/// 读取项目根目录的图标文件,转为 base64 data URL;找不到返回 None
+fn repo_icon_data_url(repo: &str) -> Option<String> {
+    let mut found: Option<std::path::PathBuf> = None;
+    for entry in std::fs::read_dir(repo).ok()?.flatten() {
+        let p = entry.path();
+        if p.is_file() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if ICON_NAMES.contains(&name.as_str()) {
+                found = Some(p);
+                break;
+            }
+        }
+    }
+    let path = found?;
+    let data = std::fs::read(&path).ok()?;
+    if data.is_empty() || data.len() > 512 * 1024 {
+        return None;
+    }
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "svg" => "image/svg+xml",
+        "gif" => "image/gif",
+        "ico" => "image/x-icon",
+        "webp" => "image/webp",
+        _ => "application/octet-stream",
+    };
+    use base64::Engine as _;
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(data)
+    ))
 }
 
 fn summarize(path: &str) -> RepoSummary {
@@ -65,6 +113,26 @@ fn summarize(path: &str) -> RepoSummary {
         unstaged: st.unstaged.len() + st.untracked.len(),
         conflicts: st.conflicts.len(),
         is_repo: st.is_repo,
+        icon: repo_icon_data_url(path),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_common_icon() {
+        let dir = std::env::temp_dir().join(format!("hellogitty-icon-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 无图标 → None
+        assert!(repo_icon_data_url(dir.to_str().unwrap()).is_none());
+        // 放一个 icon.png → data URL
+        std::fs::write(dir.join("icon.png"), vec![0x89, 0x50, 0x4e, 0x47]).unwrap();
+        let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
+        assert!(url.starts_with("data:image/png;base64,"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
 

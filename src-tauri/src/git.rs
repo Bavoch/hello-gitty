@@ -532,14 +532,19 @@ mod tests {
         stage_all(r).unwrap();
         commit(r, "base").unwrap();
         // 双方在相同位置修改同一行,制造真实冲突
+        // 先记录主分支名(init.defaultBranch 可能是 master 或 main)
+        let main_branch = run_git(r, &["symbolic-ref", "--short", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_string();
         run_git(r, &["checkout", "-q", "-b", "feature"]).unwrap();
         std::fs::write(base.join("f.txt"), "line1\nfeature\nline2\n").unwrap();
         stage_all(r).unwrap();
         commit(r, "feature change").unwrap();
-        run_git(r, &["checkout", "-q", "master"]).unwrap();
-        std::fs::write(base.join("f.txt"), "line1\nmaster\nline2\n").unwrap();
+        run_git(r, &["checkout", "-q", &main_branch]).unwrap();
+        std::fs::write(base.join("f.txt"), "line1\nother\nline2\n").unwrap();
         stage_all(r).unwrap();
-        commit(r, "master change").unwrap();
+        commit(r, "main change").unwrap();
         let err = run_git(r, &["merge", "feature"]);
         assert!(err.is_err(), "merge 应产生冲突");
         let cf = conflict_files(r);
@@ -612,23 +617,27 @@ mod tests {
         stage_all(r).unwrap();
         commit(r, "local commit").unwrap();
         run_git(r, &["remote", "add", "origin", bare.to_str().unwrap()]).unwrap();
-        run_git(r, &["push", "-u", "-q", "origin", "master"]).unwrap();
+        // 用当前分支(init.defaultBranch 可能是 master 或 main)
+        let branch = run_git(r, &["symbolic-ref", "--short", "HEAD"]).unwrap();
+        let branch = branch.trim().to_string();
+        run_git(r, &["push", "-u", "-q", "origin", &branch]).unwrap();
 
+        let remote_ref = format!("origin/{branch}");
         let up = upstream(r);
-        assert_eq!(up.as_deref(), Some("origin/master"));
-        let remote_log = log_ref(r, "origin/master", 10);
+        assert_eq!(up.as_deref(), Some(remote_ref.as_str()));
+        let remote_log = log_ref(r, &remote_ref, 10);
         assert_eq!(remote_log.len(), 1);
         assert_eq!(remote_log[0].subject, "local commit");
         // 兜底发现远程分支(upstream 缺失场景)
-        assert_eq!(first_remote_branch(r).as_deref(), Some("origin/master"));
+        assert_eq!(first_remote_branch(r).as_deref(), Some(remote_ref.as_str()));
         // ahead/behind:同步后均为 0
-        assert_eq!(ahead_count(r, "origin/master"), 0);
-        assert_eq!(behind_count(r, "origin/master"), 0);
+        assert_eq!(ahead_count(r, &remote_ref), 0);
+        assert_eq!(behind_count(r, &remote_ref), 0);
         // 本地新增一个提交 → ahead = 1
         std::fs::write(repo.join("a.txt"), "v2").unwrap();
         stage_all(r).unwrap();
         commit(r, "local only").unwrap();
-        assert_eq!(ahead_count(r, "origin/master"), 1);
+        assert_eq!(ahead_count(r, &remote_ref), 1);
 
         std::fs::remove_dir_all(repo).ok();
         std::fs::remove_dir_all(bare).ok();

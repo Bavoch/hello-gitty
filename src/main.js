@@ -135,15 +135,30 @@ function renderRepoList() {
 
     const top = document.createElement("div");
     top.className = "repo-item-top";
-    const dot = document.createElement("span");
     const dotClass = !r.is_repo ? "gone"
       : r.conflicts > 0 ? "conflict"
       : (r.staged + r.unstaged > 0 ? "dirty" : "clean");
-    dot.className = "repo-dot " + dotClass;
+    // 有项目图标则显示图标(状态点叠加在右下角),否则显示状态点
+    if (r.icon) {
+      const wrap = document.createElement("span");
+      wrap.className = "repo-icon-wrap";
+      const img = document.createElement("img");
+      img.className = "repo-icon";
+      img.src = r.icon;
+      img.alt = "";
+      const dot2 = document.createElement("span");
+      dot2.className = "repo-dot dot-small " + dotClass;
+      wrap.append(img, dot2);
+      top.appendChild(wrap);
+    } else {
+      const dot = document.createElement("span");
+      dot.className = "repo-dot " + dotClass;
+      top.appendChild(dot);
+    }
     const name = document.createElement("span");
     name.className = "repo-name";
     name.textContent = r.name;
-    top.append(dot, name);
+    top.append(name);
 
     const meta = document.createElement("div");
     meta.className = "repo-meta";
