@@ -57,8 +57,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   width: 26px; height: 26px; border-radius: 4px; color: var(--text-dim);
 }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
-.icon-btn.active { color: var(--accent); }
-.icon-btn.active:hover { color: var(--accent); background: #6366f11a; }
+/* 激活状态:常驻浅背景(不靠颜色) */
+.icon-btn.active { background: var(--hover); color: var(--text); }
 
 /* ===== 工具栏 ===== */
 #toolbar {
@@ -74,10 +74,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 .tool-btn svg { flex: none; }
 .tool-btn:hover:not(:disabled) { background: var(--hover); border-color: var(--text-dim); }
-.tool-btn.primary { border-color: var(--accent); color: var(--accent); }
-.tool-btn.primary:hover:not(:disabled) { background: #6366f11a; border-color: var(--accent); }
-.tool-btn.danger { border-color: #e5533b; color: #e5533b; }
-.tool-btn.danger:hover:not(:disabled) { background: #e5533b1f; border-color: #e5533b; }
+/* 主操作:加粗文字区分,不用颜色 */
+.tool-btn.primary { font-weight: 600; }
+.tool-btn.primary:hover:not(:disabled) { background: var(--hover); border-color: var(--text); }
+.tool-btn.danger { color: var(--text); }
+.tool-btn.danger:hover:not(:disabled) { background: var(--hover); border-color: var(--text-dim); }
 .dlg-hint.warn { color: var(--red); }
 
 /* ===== 主区 ===== */
@@ -209,8 +210,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-size: 12px; color: var(--text);
 }
 .more-menu button:hover { background: var(--hover); }
-.more-menu .danger-item { color: var(--red); }
-.more-menu .danger-item:hover { background: #f4877133; }
+.more-menu .danger-item { color: var(--text); }
 .spinner {
   width: 11px; height: 11px; border: 2px solid var(--text-dim); border-top-color: transparent;
   border-radius: 50%; display: inline-block; animation: spin .7s linear infinite;
@@ -265,12 +265,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; min-width: 0;
 }
 .rollback {
-  font-size: 10px; color: var(--red); flex: none;
+  font-size: 10px; color: var(--text); flex: none;
   padding: 1px 5px; border-radius: 3px;
   visibility: hidden; /* 悬停才显示,保持布局不跳动 */
 }
 .h-cell:hover .rollback { visibility: visible; }
-.rollback:hover { background: #f4877133; }
+.rollback:hover { background: var(--hover); }
 .rollback:disabled { visibility: hidden; }
 .history-none { padding: 4px 12px 8px 34px; font-size: 11px; color: var(--text-dim); }
 .mono { font-family: var(--mono); color: var(--accent); }
