@@ -341,6 +341,46 @@ pub fn recent_log(repo: &str, n: usize) -> Vec<String> {
         .unwrap_or_default()
 }
 
+#[derive(Serialize, Clone)]
+pub struct CommitInfo {
+    pub hash: String,
+    pub short: String,
+    pub author: String,
+    pub timestamp: i64,
+    pub subject: String,
+}
+
+/// 历史列表(按时间倒序)
+pub fn log(repo: &str, n: usize) -> Vec<CommitInfo> {
+    run_git(repo, &["log", &format!("-{n}"), "--format=%H%x09%h%x09%an%x09%at%x09%s"])
+        .map(|o| {
+            o.lines()
+                .filter_map(|l| {
+                    let mut p = l.splitn(5, '\t');
+                    Some(CommitInfo {
+                        hash: p.next()?.to_string(),
+                        short: p.next()?.to_string(),
+                        author: p.next()?.to_string(),
+                        timestamp: p.next()?.parse().unwrap_or(0),
+                        subject: p.next()?.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn head_hash(repo: &str) -> Option<String> {
+    run_git(repo, &["rev-parse", "HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+/// 强制回退到指定提交(丢弃之后的所有提交与未提交修改)
+pub fn reset_hard(repo: &str, hash: &str) -> Result<String, String> {
+    run_git(repo, &["reset", "--hard", hash])
+}
+
 /// 冲突文件清单
 pub fn conflict_files(repo: &str) -> Vec<String> {
     run_git(repo, &["diff", "--name-only", "--diff-filter=U"])
@@ -488,6 +528,32 @@ mod tests {
         commit(r, "init").unwrap();
         let (merged, _) = finish_merge(r).unwrap();
         assert!(!merged, "无 MERGE_HEAD 时不应合并");
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn log_and_reset_hard() {
+        let repo = temp_repo("logreset");
+        let r = repo.to_str().unwrap();
+        std::fs::write(repo.join("a.txt"), "v1").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "first").unwrap();
+        std::fs::write(repo.join("a.txt"), "v2").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "second").unwrap();
+
+        let commits = log(r, 10);
+        assert_eq!(commits.len(), 2, "应解析出 2 条提交");
+        assert_eq!(commits[0].subject, "second", "按时间倒序");
+        assert_eq!(commits[0].short.len(), 7, "短 hash 为 7 位");
+        assert!(head_hash(r).as_deref() == Some(commits[0].hash.as_str()));
+
+        // 强制回退到 first
+        reset_hard(r, &commits[1].hash).unwrap();
+        let commits2 = log(r, 10);
+        assert_eq!(commits2.len(), 1);
+        assert_eq!(commits2[0].subject, "first");
+        assert_eq!(head_hash(r).as_deref(), Some(commits2[0].hash.as_str()));
         std::fs::remove_dir_all(repo).ok();
     }
 }

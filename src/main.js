@@ -71,6 +71,8 @@ function bindEvents() {
     resolveAllConflicts();
   });
   $("btn-merge-manual").addEventListener("click", () => $("dlg-merge-conflict").classList.add("hidden"));
+  $("btn-reset-cancel").addEventListener("click", () => $("dlg-reset").classList.add("hidden"));
+  $("btn-reset-confirm").addEventListener("click", doReset);
 
   document.querySelectorAll(".section-head").forEach((h) =>
     h.addEventListener("click", () => {
@@ -184,7 +186,87 @@ async function refresh() {
   }
   showPanel(st);
   updateToolbar(st);
+  await renderHistory(); // 同步历史列表与 HEAD 标记
   await loadRepos(); // 同步侧栏状态徽标
+}
+
+/* ===== 历史 ===== */
+async function renderHistory() {
+  const h = await invoke("git_history", { repo });
+  const ul = $("history-list");
+  ul.innerHTML = "";
+  $("history-count").textContent = h.commits.length;
+  for (const c of h.commits) {
+    const isHead = c.hash === h.head;
+    const li = document.createElement("li");
+    li.className = "history-item" + (isHead ? " is-head" : "");
+    li.title = c.hash + " · " + c.author;
+
+    const hash = document.createElement("span");
+    hash.className = "h-hash";
+    hash.textContent = c.short;
+    li.appendChild(hash);
+
+    if (isHead) {
+      const tag = document.createElement("span");
+      tag.className = "h-head-tag";
+      tag.textContent = "HEAD";
+      li.appendChild(tag);
+    }
+
+    const msg = document.createElement("span");
+    msg.className = "h-msg";
+    msg.textContent = c.subject;
+    msg.title = c.subject;
+    li.appendChild(msg);
+
+    const time = document.createElement("span");
+    time.className = "h-time";
+    time.textContent = relTime(c.timestamp);
+    li.appendChild(time);
+
+    const actions = document.createElement("span");
+    actions.className = "row-actions";
+    const rb = document.createElement("button");
+    rb.className = "rollback";
+    rb.textContent = "强制回退";
+    rb.disabled = isHead;
+    rb.title = isHead ? "当前 HEAD" : "强制回退到此版本(丢弃之后所有提交)";
+    rb.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      askReset(c.hash, c.short);
+    });
+    actions.appendChild(rb);
+    li.appendChild(actions);
+
+    ul.appendChild(li);
+  }
+}
+
+function relTime(ts) {
+  const s = Math.floor(Date.now() / 1000) - ts;
+  if (s < 60) return "刚刚";
+  if (s < 3600) return Math.floor(s / 60) + " 分钟前";
+  if (s < 86400) return Math.floor(s / 3600) + " 小时前";
+  if (s < 86400 * 30) return Math.floor(s / 86400) + " 天前";
+  const d = new Date(ts * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+let resetHash = null;
+function askReset(hash, short) {
+  resetHash = hash;
+  $("reset-target").textContent = short;
+  $("dlg-reset").classList.remove("hidden");
+}
+
+async function doReset() {
+  if (!resetHash) return;
+  $("dlg-reset").classList.add("hidden");
+  const r = await runBusy("git_reset_hard", { repo, hash: resetHash }, "强制回退中…");
+  resetHash = null;
+  await refresh();
+  if (r && r.ok) toast("已强制回退", true);
 }
 
 function showEmpty(showInit) {

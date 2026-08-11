@@ -101,6 +101,18 @@
             </div>
             <ul class="file-list" id="unstaged-list"></ul>
           </div>
+
+          <div class="section" id="sec-history">
+            <div class="section-head-row">
+              <button class="section-head" data-target="history-list">
+                <span class="caret">▸</span>
+                <span class="badge badge-h">H</span>
+                <span>历史</span>
+                <span class="count" id="history-count">0</span>
+              </button>
+            </div>
+            <ul class="history-list" id="history-list"></ul>
+          </div>
         </div>
       </div>
     </div>
@@ -117,6 +129,19 @@
         <span class="spacer"></span>
         <button class="tool-btn" id="btn-commit-cancel">取消</button>
         <button class="tool-btn primary" id="btn-commit-confirm">提交</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 强制回退确认 -->
+  <div class="overlay hidden" id="dlg-reset">
+    <div class="dialog">
+      <h3>强制回退到 <span id="reset-target" class="mono"></span></h3>
+      <p class="dlg-hint warn">将丢弃此版本之后的所有提交与未提交的修改,此操作不可恢复。</p>
+      <div class="dlg-actions">
+        <button class="tool-btn" id="btn-reset-cancel">取消</button>
+        <span class="spacer"></span>
+        <button class="tool-btn danger" id="btn-reset-confirm">强制回退</button>
       </div>
     </div>
   </div>

@@ -138,6 +138,30 @@ async fn window_set_always_on_top(app: tauri::AppHandle, on: bool) -> Result<(),
     Ok(())
 }
 
+/// 历史列表 + 当前 HEAD
+#[derive(Serialize)]
+struct History {
+    head: Option<String>,
+    commits: Vec<git::CommitInfo>,
+}
+
+#[tauri::command]
+fn git_history(repo: String) -> History {
+    History {
+        head: git::head_hash(&repo),
+        commits: git::log(&repo, 20),
+    }
+}
+
+#[tauri::command]
+async fn git_reset_hard(repo: String, hash: String) -> OpResult {
+    op(
+        tauri::async_runtime::spawn_blocking(move || git::reset_hard(&repo, &hash))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string())),
+    )
+}
+
 #[tauri::command]
 fn git_stage_all(repo: String) -> Result<(), String> {
     git::stage_all(&repo)
@@ -249,6 +273,8 @@ pub fn run() {
             git_push,
             git_pull,
             git_finish_merge,
+            git_history,
+            git_reset_hard,
             ai_commit_message,
             ai_presets,
             ai_resolve_file,

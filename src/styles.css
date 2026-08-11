@@ -72,6 +72,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .tool-btn:hover:not(:disabled) { background: #1177bb40; }
 .tool-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tool-btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+.tool-btn.danger { background: #e5533b; border-color: #e5533b; color: #fff; }
+.tool-btn.danger:hover:not(:disabled) { background: #f06b63; }
+.dlg-hint.warn { color: var(--red); }
 
 /* ===== 主区 ===== */
 #workspace { flex: 1; display: flex; min-height: 0; }
@@ -160,6 +163,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .badge-a { background: #89d18533; color: var(--green); }
 .badge-m { background: #dcdcaa33; color: var(--yellow); }
 .badge-c { background: #f4877133; color: var(--red); }
+.badge-h { background: #6366f133; color: #a5a8ff; }
 
 .file-list { list-style: none; }
 .file-list:empty { display: none; }
@@ -199,6 +203,35 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   border-radius: 50%; display: inline-block; animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== 历史列表 ===== */
+.history-list { list-style: none; }
+.history-list:empty { display: none; }
+.history-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px 4px 34px; cursor: pointer;
+}
+.history-item:hover { background: var(--hover); }
+.h-history-item .row-actions { display: none; }
+.history-item:hover .row-actions { display: inline-flex; }
+.h-hash {
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  width: 60px; flex: none; overflow: hidden; text-overflow: ellipsis;
+}
+.history-item.is-head .h-hash { color: var(--accent); font-weight: 600; }
+.h-head-tag {
+  font-size: 9.5px; padding: 1px 5px; border-radius: 3px; flex: none;
+  background: #6366f133; color: #a5a8ff;
+}
+.h-msg {
+  flex: 1; font-size: 12px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text;
+}
+.h-time { font-size: 10.5px; color: var(--text-dim); flex: none; }
+.rollback { font-size: 11px; color: var(--red); padding: 1px 5px; border-radius: 3px; }
+.rollback:hover { background: #f4877133; }
+.rollback:disabled { opacity: .4; cursor: default; }
+.mono { font-family: var(--mono); color: var(--accent); }
 
 /* ===== 弹窗 ===== */
 .overlay {
