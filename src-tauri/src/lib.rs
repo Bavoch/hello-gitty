@@ -63,41 +63,86 @@ const ICON_LOCATIONS: &[&str] = &[
     "src/assets/logo.png", "src/assets/icon.png", "src/assets/logo.svg",
     "public/favicon.ico", "public/logo.png", "public/logo.svg",
     "app/icon.png", "app/logo.png",
+    // Chrome 扩展常见位置
+    "icons/icon128.png", "icons/icon48.png", "icons/icon16.png",
+    "icons/icon.png", "icons/logo.png",
+    "images/icon128.png", "images/icon.png",
 ];
 
 /// 通用项目兜底图标(灰色文件夹)
 const FALLBACK_ICON_SVG: &str = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='#8a8a8a' d='M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z'/></svg>";
 
+/// 读取图片文件转 base64 data URL;文件缺失/空/超限返回 None
+fn read_icon_data_url(path: &std::path::Path) -> Option<String> {
+    use base64::Engine as _;
+    let data = std::fs::read(path).ok()?;
+    if data.is_empty() || data.len() > 512 * 1024 {
+        return None;
+    }
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "svg" => "image/svg+xml",
+        "gif" => "image/gif",
+        "ico" => "image/x-icon",
+        "webp" => "image/webp",
+        _ => "application/octet-stream",
+    };
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(data)
+    ))
+}
+
+/// Chrome 扩展:解析 manifest.json 声明的 icons(或 action.default_icon)
+fn chrome_manifest_icon(repo_path: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(repo_path.join("manifest.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let rel = v
+        .pointer("/icons/128")
+        .or(v.pointer("/icons/48"))
+        .or(v.pointer("/icons/16"))
+        .and_then(|x| x.as_str())
+        .or_else(|| {
+            v.pointer("/action/default_icon/128")
+                .or(v.pointer("/action/default_icon/48"))
+                .or(v.pointer("/action/default_icon/16"))
+                .and_then(|x| x.as_str())
+        })
+        .or_else(|| v.pointer("/action/default_icon").and_then(|x| x.as_str()));
+    let rel = rel?;
+    // 防目录穿越:拒绝含 .. 的相对路径
+    if rel.contains("..") {
+        return None;
+    }
+    read_icon_data_url(&repo_path.join(rel))
+}
+
 /// 读取项目图标文件,转为 base64 data URL;
 /// 找不到真实图标时返回通用文件夹图标(保证每个项目都有图标)
 fn repo_icon_data_url(repo: &str) -> Option<String> {
     use base64::Engine as _;
-    let b64 = |data: &[u8]| base64::engine::general_purpose::STANDARD.encode(data);
     let repo_path = std::path::Path::new(repo);
-    for loc in ICON_LOCATIONS {
-        let p = repo_path.join(loc);
-        let data = match std::fs::read(&p) {
-            Ok(d) if !d.is_empty() && d.len() <= 512 * 1024 => d,
-            _ => continue,
-        };
-        let ext = p
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        let mime = match ext.as_str() {
-            "png" => "image/png",
-            "jpg" | "jpeg" => "image/jpeg",
-            "svg" => "image/svg+xml",
-            "gif" => "image/gif",
-            "ico" => "image/x-icon",
-            "webp" => "image/webp",
-            _ => "application/octet-stream",
-        };
-        return Some(format!("data:{mime};base64,{}", b64(&data)));
+    // 1. Chrome 扩展 manifest.json 声明(最精确)
+    if let Some(url) = chrome_manifest_icon(repo_path) {
+        return Some(url);
     }
-    // 兜底:通用文件夹图标
-    Some(format!("data:image/svg+xml;base64,{}", b64(FALLBACK_ICON_SVG.as_bytes())))
+    // 2. 常见路径候选
+    for loc in ICON_LOCATIONS {
+        if let Some(url) = read_icon_data_url(&repo_path.join(loc)) {
+            return Some(url);
+        }
+    }
+    // 3. 兜底:通用文件夹图标
+    Some(format!(
+        "data:image/svg+xml;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(FALLBACK_ICON_SVG.as_bytes())
+    ))
 }
 
 fn summarize(path: &str) -> RepoSummary {
@@ -142,6 +187,33 @@ mod tests {
         std::fs::write(dir.join("src-tauri/icons/icon.png"), vec![0x89, 0x50, 0x4e, 0x47]).unwrap();
         let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
         assert!(url.starts_with("data:image/png;base64,"), "子目录图标应被发现");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn finds_chrome_extension_icon() {
+        let dir = std::env::temp_dir().join(format!("hellogitty-chrome-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 按 manifest.json 声明 icons(128 优先)
+        std::fs::create_dir_all(dir.join("icons")).unwrap();
+        std::fs::write(dir.join("icons/icon128.png"), vec![0x89, 0x50, 0x4e, 0x47]).unwrap();
+        std::fs::write(
+            dir.join("manifest.json"),
+            r#"{"name":"demo","version":"1.0","manifest_version":3,"icons":{"16":"icons/icon16.png","48":"icons/icon48.png","128":"icons/icon128.png"}}"#,
+        )
+        .unwrap();
+        let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
+        assert!(url.starts_with("data:image/png;base64,"), "manifest icons 应被解析");
+        // 路径含 .. 应被拒绝,回退文件夹兜底
+        std::fs::remove_file(dir.join("icons/icon128.png")).unwrap(); // 清掉候选路径命中,确保走兜底
+        std::fs::write(
+            dir.join("manifest.json"),
+            r#"{"manifest_version":3,"icons":{"128":"../../etc/passwd"}}"#,
+        )
+        .unwrap();
+        let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
+        assert!(url.starts_with("data:image/svg+xml"), "穿越路径应被拒绝");
         std::fs::remove_dir_all(&dir).ok();
     }
 }
