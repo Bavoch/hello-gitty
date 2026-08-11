@@ -74,6 +74,34 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .tool-btn.danger { color: var(--text); }
 .dlg-hint.warn { color: var(--red); }
 
+/* 分支切换 chip */
+.branch-chip { font-family: var(--mono); font-size: 12px; }
+.branch-chip .caret-svg { opacity: .6; }
+.branch-chip #branch-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 分支切换弹窗 */
+.branch-groups { display: flex; flex-direction: column; gap: 10px; }
+.branch-group-title {
+  font-size: 11px; color: var(--text-dim); margin-bottom: 4px;
+  display: flex; align-items: center; gap: 6px;
+}
+.branch-group-title::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim);
+}
+.branch-group-title.remote::before { background: #8b5cf6; }
+.branch-group { display: flex; flex-direction: column; }
+.branch-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 4px; font-size: 12px; color: var(--text);
+  text-align: left;
+}
+.branch-item:hover { background: var(--hover-strong); }
+.branch-item.current { font-weight: 600; }
+.branch-mark { width: 14px; flex: none; font-size: 11px; color: var(--text-dim); }
+.branch-item.current .branch-mark { color: var(--accent); }
+.branch-label { flex: 1; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.branch-none { padding: 4px 8px; font-size: 11px; color: var(--text-dim); }
+
 /* ===== 主区 ===== */
 #workspace { flex: 1; display: flex; min-height: 0; }
 #content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -93,34 +121,34 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .sidebar-head .icon-btn { width: 22px; height: 22px; }
 #repo-list { list-style: none; overflow-y: auto; flex: 1; }
 .repo-item {
-  padding: 7px 10px; cursor: pointer; border-left: 2px solid transparent;
-  display: flex; flex-direction: column; gap: 3px;
+  padding: 4px 10px; cursor: pointer; border-left: 2px solid transparent;
+  display: grid; grid-template-columns: 24px 1fr; align-items: center; gap: 4px;
 }
 .repo-item:hover { background: var(--hover); }
 .repo-item.active { border-left-color: var(--accent); background: #6366f11a; }
-.repo-item-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .repo-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-dim); }
 .repo-dot.clean { background: var(--green); }
 .repo-dot.dirty { background: var(--yellow); }
 .repo-dot.conflict { background: var(--red); }
 .repo-dot.gone { background: var(--text-dim); }
-/* 项目图标(状态点叠加右下角) */
-.repo-icon-wrap { position: relative; width: 18px; height: 18px; flex: none; }
+/* 项目图标(图标单独一列,状态点叠加右下角) */
+.repo-icon-wrap { position: relative; width: 20px; height: 20px; }
 .repo-icon {
-  width: 16px; height: 16px; border-radius: 4px;
+  width: 18px; height: 18px; border-radius: 4px;
   object-fit: contain; display: block;
 }
 .dot-small {
-  position: absolute; right: -2px; bottom: -2px;
+  position: absolute; right: -1px; bottom: -1px;
   width: 7px; height: 7px; border: 1.5px solid var(--panel);
 }
+.repo-info { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .repo-name {
-  flex: 1; font-size: 12px; color: var(--text); overflow: hidden;
+  font-size: 12px; color: var(--text); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
 .repo-meta {
   font-size: 10.5px; color: var(--text-dim); font-family: var(--mono);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .repo-meta .c { color: var(--red); font-weight: 600; }
 .sidebar-empty { padding: 8px 10px; font-size: 11px; color: var(--text-dim); }
@@ -165,10 +193,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: inline-flex; align-items: center; justify-content: center;
   width: 16px; height: 16px; font-size: 10px; font-weight: 700; border-radius: 3px; flex: none;
 }
-.badge-a { background: #89d18533; color: var(--green); }
-.badge-m { background: #dcdcaa33; color: var(--yellow); }
-.badge-c { background: #f4877133; color: var(--red); }
 .badge-h { background: #6366f133; color: #a5a8ff; }
+/* 分组字母标题(A/M/C) */
+#conflict-title, #staged-title, #unstaged-title {
+  font-weight: 700; font-size: 12px; font-family: var(--mono); letter-spacing: .5px;
+}
+#conflict-title { color: var(--red); }
+#staged-title { color: var(--green); }
+#unstaged-title { color: var(--yellow); }
 
 .file-list { list-style: none; }
 .file-list:empty { display: none; }

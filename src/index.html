@@ -29,6 +29,11 @@
 
     <div id="content">
       <section id="toolbar">
+        <button id="btn-branch" class="tool-btn branch-chip" disabled title="切换分支">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+          <span id="branch-name">—</span>
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="caret-svg"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
         <button id="btn-commit" class="tool-btn primary" disabled>
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
           提交
@@ -77,8 +82,7 @@
           <div class="section" id="sec-conflicts">
             <button class="section-head" data-target="conflict-list">
               <span class="caret">▸</span>
-              <span class="badge badge-c">C</span>
-              <span id="conflict-title">冲突</span>
+              <span id="conflict-title">C</span>
               <span class="count" id="conflict-count">0</span>
             </button>
             <div class="section-actions">
@@ -91,8 +95,7 @@
             <div class="section-head-row">
               <button class="section-head" data-target="staged-list">
                 <span class="caret">▸</span>
-                <span class="badge badge-a">A</span>
-                <span>暂存的更改</span>
+                <span id="staged-title">A</span>
                 <span class="count" id="staged-count">0</span>
               </button>
               <button class="mini-btn" id="btn-unstage-all" disabled>取消全部</button>
@@ -104,8 +107,7 @@
             <div class="section-head-row">
               <button class="section-head" data-target="unstaged-list">
                 <span class="caret">▸</span>
-                <span class="badge badge-m">M</span>
-                <span>更改</span>
+                <span id="unstaged-title">M</span>
                 <span class="count" id="unstaged-count">0</span>
               </button>
               <button class="mini-btn" id="btn-stage-all" disabled>全部暂存</button>
@@ -141,6 +143,14 @@
         <button class="tool-btn" id="btn-commit-cancel">取消</button>
         <button class="tool-btn primary" id="btn-commit-confirm">提交</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 分支切换 -->
+  <div class="overlay hidden" id="dlg-branch">
+    <div class="dialog">
+      <h3>切换分支</h3>
+      <div class="branch-groups" id="branch-groups"></div>
     </div>
   </div>
 

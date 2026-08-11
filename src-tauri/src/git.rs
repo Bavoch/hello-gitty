@@ -420,6 +420,34 @@ pub fn reset_hard(repo: &str, hash: &str) -> Result<String, String> {
     run_git(repo, &["reset", "--hard", hash])
 }
 
+/// 本地分支列表
+pub fn local_branches(repo: &str) -> Vec<String> {
+    run_git(repo, &["branch", "--format=%(refname:short)"])
+        .map(|o| o.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// 远程跟踪分支列表(排除 origin/HEAD 符号引用)
+pub fn remote_branches(repo: &str) -> Vec<String> {
+    run_git(repo, &["branch", "-r", "--format=%(refname:short)"])
+        .map(|o| {
+            o.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty() && l != "origin/HEAD")
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 切换分支;远程分支(origin/xxx)自动创建对应本地分支跟踪
+pub fn checkout(repo: &str, branch: &str) -> Result<String, String> {
+    if let Some(remote) = branch.strip_prefix("origin/") {
+        run_git(repo, &["checkout", "-b", remote, branch])
+    } else {
+        run_git(repo, &["checkout", branch])
+    }
+}
+
 /// 冲突文件清单
 pub fn conflict_files(repo: &str) -> Vec<String> {
     run_git(repo, &["diff", "--name-only", "--diff-filter=U"])
@@ -641,5 +669,32 @@ mod tests {
 
         std::fs::remove_dir_all(repo).ok();
         std::fs::remove_dir_all(bare).ok();
+    }
+
+    #[test]
+    fn branches_and_checkout() {
+        let repo = temp_repo("branches");
+        let r = repo.to_str().unwrap();
+        std::fs::write(repo.join("a.txt"), "x").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "init").unwrap();
+        let main = run_git(r, &["branch", "--show-current"]).unwrap();
+        let main = main.trim().to_string();
+        // 建第二个本地分支
+        run_git(r, &["checkout", "-q", "-b", "dev"]).unwrap();
+        std::fs::write(repo.join("b.txt"), "y").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "dev work").unwrap();
+        run_git(r, &["checkout", "-q", &main]).unwrap();
+
+        let locals = local_branches(r);
+        assert!(locals.contains(&main) && locals.contains(&"dev".to_string()));
+        // 切到 dev 并确认
+        checkout(r, "dev").unwrap();
+        let cur = run_git(r, &["branch", "--show-current"]).unwrap();
+        assert_eq!(cur.trim(), "dev");
+        // 切到不存在的分支报错
+        assert!(checkout(r, "nope").is_err());
+        std::fs::remove_dir_all(repo).ok();
     }
 }

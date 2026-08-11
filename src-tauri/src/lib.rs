@@ -346,6 +346,42 @@ async fn git_reset_hard(repo: String, hash: String) -> OpResult {
     )
 }
 
+#[derive(Serialize)]
+struct BranchList {
+    current: Option<String>,
+    locals: Vec<String>,
+    remotes: Vec<String>,
+}
+
+#[tauri::command]
+async fn git_branches(repo: String) -> BranchList {
+    let r1 = repo.clone();
+    let r2 = repo.clone();
+    let r3 = repo.clone();
+    let cur_job = tauri::async_runtime::spawn_blocking(move || {
+        git::run_git(&r1, &["branch", "--show-current"])
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    });
+    let loc_job = tauri::async_runtime::spawn_blocking(move || git::local_branches(&r2));
+    let rem_job = tauri::async_runtime::spawn_blocking(move || git::remote_branches(&r3));
+    BranchList {
+        current: cur_job.await.ok().flatten(),
+        locals: loc_job.await.unwrap_or_default(),
+        remotes: rem_job.await.unwrap_or_default(),
+    }
+}
+
+#[tauri::command]
+async fn git_checkout(repo: String, branch: String) -> OpResult {
+    op(
+        tauri::async_runtime::spawn_blocking(move || git::checkout(&repo, &branch))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string())),
+    )
+}
+
 #[tauri::command]
 fn git_stage_all(repo: String) -> Result<(), String> {
     git::stage_all(&repo)
@@ -644,6 +680,8 @@ pub fn run() {
             git_finish_merge,
             git_history,
             git_reset_hard,
+            git_branches,
+            git_checkout,
             ai_commit_message,
             ai_presets,
             ai_resolve_file,

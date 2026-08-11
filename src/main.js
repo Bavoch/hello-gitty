@@ -55,6 +55,7 @@ function bindEvents() {
   $("btn-commit").addEventListener("click", onCommit);
   $("btn-push").addEventListener("click", () => pushPull("push"));
   $("btn-pull").addEventListener("click", () => pushPull("pull"));
+  $("btn-branch").addEventListener("click", openBranchDialog);
   $("btn-ai-resolve").addEventListener("click", resolveAllConflicts);
   $("btn-settings").addEventListener("click", openSettings);
   $("btn-pin").addEventListener("click", togglePin);
@@ -133,44 +134,38 @@ function renderRepoList() {
     li.className = "repo-item" + (r.path === repo ? " active" : "");
     li.title = r.path;
 
-    const top = document.createElement("div");
-    top.className = "repo-item-top";
     const dotClass = !r.is_repo ? "gone"
       : r.conflicts > 0 ? "conflict"
       : (r.staged + r.unstaged > 0 ? "dirty" : "clean");
-    // 有项目图标则显示图标(状态点叠加在右下角),否则显示状态点
-    if (r.icon) {
-      const wrap = document.createElement("span");
-      wrap.className = "repo-icon-wrap";
-      const img = document.createElement("img");
-      img.className = "repo-icon";
-      img.src = r.icon;
-      img.alt = "";
-      const dot2 = document.createElement("span");
-      dot2.className = "repo-dot dot-small " + dotClass;
-      wrap.append(img, dot2);
-      top.appendChild(wrap);
-    } else {
-      const dot = document.createElement("span");
-      dot.className = "repo-dot " + dotClass;
-      top.appendChild(dot);
-    }
+    // 图标单独一列(状态点叠加右下角)
+    const ic = document.createElement("span");
+    ic.className = "repo-icon-wrap";
+    const img = document.createElement("img");
+    img.className = "repo-icon";
+    img.src = r.icon;
+    img.alt = "";
+    const dot2 = document.createElement("span");
+    dot2.className = "repo-dot dot-small " + dotClass;
+    ic.append(img, dot2);
+
+    const info = document.createElement("div");
+    info.className = "repo-info";
     const name = document.createElement("span");
     name.className = "repo-name";
     name.textContent = r.name;
-    top.append(name);
-
+    info.appendChild(name);
     const meta = document.createElement("div");
     meta.className = "repo-meta";
-    // 分支与数字都是安全的;仍转义以防路径含特殊字符
-    let html = escapeHtml(r.is_repo ? (r.branch || "(无分支)") : "不是 Git 仓库");
-    if (r.conflicts) html += ` · <span class="c">${r.conflicts} 冲突</span>`;
-    if (r.staged) html += ` · ${r.staged} 暂存`;
-    if (r.unstaged) html += ` · ${r.unstaged} 更改`;
-    if (r.ahead || r.behind) html += ` · ⇡${r.ahead}⇣${r.behind}`;
-    meta.innerHTML = html;
+    // 不显示分支名;计数用字母 A/M/C 表示
+    let html = r.is_repo ? "" : "不是 Git 仓库";
+    if (r.conflicts) html += ` C${r.conflicts}`;
+    if (r.staged) html += ` A${r.staged}`;
+    if (r.unstaged) html += ` M${r.unstaged}`;
+    if (r.ahead || r.behind) html += ` ⇡${r.ahead}⇣${r.behind}`;
+    meta.textContent = html.trim();
+    info.append(name, meta);
 
-    li.append(top, meta);
+    li.append(ic, info);
     li.addEventListener("click", () => switchRepo(r.path));
     ul.appendChild(li);
   }
@@ -396,6 +391,8 @@ function showEmpty(showInit) {
   $("panel").classList.add("hidden");
   $("empty-state").classList.remove("hidden");
   $("btn-init").classList.toggle("hidden", !showInit);
+  $("branch-name").textContent = "—";
+  $("branch-name").title = "";
   setToolbarEnabled(false);
 }
 
@@ -409,12 +406,15 @@ function showPanel(st) {
 
   $("sec-conflicts").classList.toggle("hidden", st.conflicts.length === 0);
   $("btn-ai-resolve").disabled = st.conflicts.length === 0;
+  // 右侧面板显示当前分支
+  $("branch-name").textContent = st.detached ? "(分离)" : (st.branch || "(无分支)");
+  $("branch-name").title = st.branch || "";
   setToolbarEnabled(true);
   updateToolbar(st);
 }
 
 function setToolbarEnabled(enabled) {
-  ["btn-stage-all", "btn-unstage-all", "btn-commit", "btn-push", "btn-pull"].forEach((id) => {
+  ["btn-branch", "btn-stage-all", "btn-unstage-all", "btn-commit", "btn-push", "btn-pull"].forEach((id) => {
     $(id).disabled = !enabled;
   });
 }
@@ -657,6 +657,55 @@ async function togglePin() {
   }
 }
 
+/* ===== 分支切换 ===== */
+async function openBranchDialog() {
+  if (!repo) return;
+  const b = await invoke("git_branches", { repo });
+  const box = $("branch-groups");
+  box.innerHTML = "";
+
+  const group = (title, items, isRemote) => {
+    const g = document.createElement("div");
+    g.className = "branch-group";
+    const h = document.createElement("div");
+    h.className = "branch-group-title";
+    h.textContent = title;
+    g.appendChild(h);
+    if (!items.length) {
+      const none = document.createElement("div");
+      none.className = "branch-none";
+      none.textContent = "无";
+      g.appendChild(none);
+      return g;
+    }
+    for (const name of items) {
+      const item = document.createElement("button");
+      item.className = "branch-item" + (name === b.current ? " current" : "");
+      const mark = document.createElement("span");
+      mark.className = "branch-mark";
+      mark.textContent = name === b.current ? "✓" : (isRemote ? "↳" : "");
+      const label = document.createElement("span");
+      label.className = "branch-label";
+      label.textContent = isRemote ? name.replace(/^origin\//, "") : name;
+      item.append(mark, label);
+      item.addEventListener("click", () => switchBranch(name));
+      g.appendChild(item);
+    }
+    return g;
+  };
+
+  box.append(group("本地", b.locals, false));
+  box.append(group("远程", b.remotes, true));
+  $("dlg-branch").classList.remove("hidden");
+}
+
+async function switchBranch(name) {
+  $("dlg-branch").classList.add("hidden");
+  const r = await runBusy("git_checkout", { repo, branch: name }, "切换分支中…");
+  await refresh();
+  if (r && r.ok) toast("已切换到 " + name, true);
+}
+
 /* ===== 设置 ===== */
 async function openSettings() {
   $("set-base-url").value = settings.ai.base_url || DEFAULT_AI.base_url;
@@ -751,7 +800,7 @@ function setBusy(v, text) {
   busy = v;
   $("sb-busy").classList.toggle("hidden", !v);
   if (text) $("sb-busy-text").textContent = text;
-  ["btn-stage-all", "btn-unstage-all", "btn-commit", "btn-push", "btn-pull", "btn-more"].forEach((id) => {
+  ["btn-branch", "btn-stage-all", "btn-unstage-all", "btn-commit", "btn-push", "btn-pull", "btn-more"].forEach((id) => {
     $(id).disabled = v;
   });
 }
