@@ -37,8 +37,6 @@
 
     <div id="content">
       <section id="toolbar">
-        <button id="btn-stage-all" class="tool-btn" disabled>全部暂存</button>
-        <button id="btn-unstage-all" class="tool-btn" disabled>取消暂存</button>
         <button id="btn-commit" class="tool-btn primary" disabled>提交</button>
         <button id="btn-push" class="tool-btn" disabled>推送</button>
         <button id="btn-pull" class="tool-btn" disabled>拉取</button>
@@ -76,22 +74,28 @@
           </div>
 
           <div class="section" id="sec-staged">
-            <button class="section-head" data-target="staged-list">
-              <span class="caret">▸</span>
-              <span class="badge badge-a">A</span>
-              <span>暂存的更改</span>
-              <span class="count" id="staged-count">0</span>
-            </button>
+            <div class="section-head-row">
+              <button class="section-head" data-target="staged-list">
+                <span class="caret">▸</span>
+                <span class="badge badge-a">A</span>
+                <span>暂存的更改</span>
+                <span class="count" id="staged-count">0</span>
+              </button>
+              <button class="mini-btn" id="btn-unstage-all" disabled>取消全部</button>
+            </div>
             <ul class="file-list" id="staged-list"></ul>
           </div>
 
           <div class="section" id="sec-unstaged">
-            <button class="section-head" data-target="unstaged-list">
-              <span class="caret">▸</span>
-              <span class="badge badge-m">M</span>
-              <span>更改</span>
-              <span class="count" id="unstaged-count">0</span>
-            </button>
+            <div class="section-head-row">
+              <button class="section-head" data-target="unstaged-list">
+                <span class="caret">▸</span>
+                <span class="badge badge-m">M</span>
+                <span>更改</span>
+                <span class="count" id="unstaged-count">0</span>
+              </button>
+              <button class="mini-btn" id="btn-stage-all" disabled>全部暂存</button>
+            </div>
             <ul class="file-list" id="unstaged-list"></ul>
           </div>
         </div>

@@ -129,6 +129,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .empty-actions { display: flex; gap: 8px; margin-top: 6px; }
 
 .section { border-bottom: 1px solid var(--border); }
+.section-head-row { display: flex; align-items: center; gap: 4px; }
+.section-head-row .section-head { flex: 1; min-width: 0; }
+.section-head-row .mini-btn { margin-right: 8px; flex: none; padding: 2px 8px; }
 .section-head {
   display: flex; align-items: center; gap: 6px; width: 100%;
   padding: 6px 12px; background: var(--panel); color: var(--text-head);
