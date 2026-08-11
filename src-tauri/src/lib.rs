@@ -164,6 +164,21 @@ async fn git_pull(repo: String) -> OpResult {
     op(tauri::async_runtime::spawn_blocking(move || git::pull(&repo)).await.unwrap_or_else(|e| Err(e.to_string())))
 }
 
+/// AI 解决冲突后调用:若处于合并中则自动完成合并提交
+#[derive(Serialize)]
+struct MergeResult {
+    merged: bool,
+    message: String,
+}
+
+#[tauri::command]
+async fn git_finish_merge(repo: String) -> Result<MergeResult, String> {
+    let (merged, message) = tauri::async_runtime::spawn_blocking(move || git::finish_merge(&repo))
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()))?;
+    Ok(MergeResult { merged, message })
+}
+
 #[tauri::command]
 async fn ai_commit_message(settings: AiConfig, repo: String) -> Result<String, String> {
     ai::generate_commit_message(&settings, &repo).await
@@ -223,6 +238,7 @@ pub fn run() {
             git_commit,
             git_push,
             git_pull,
+            git_finish_merge,
             ai_commit_message,
             ai_presets,
             ai_resolve_file,

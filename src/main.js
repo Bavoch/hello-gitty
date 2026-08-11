@@ -66,6 +66,11 @@ function bindEvents() {
   $("btn-commit-confirm").addEventListener("click", doCommit);
   $("btn-regen").addEventListener("click", regenMessage);
   $("btn-conflict-done").addEventListener("click", () => $("dlg-conflict").classList.add("hidden"));
+  $("btn-merge-ai").addEventListener("click", () => {
+    $("dlg-merge-conflict").classList.add("hidden");
+    resolveAllConflicts();
+  });
+  $("btn-merge-manual").addEventListener("click", () => $("dlg-merge-conflict").classList.add("hidden"));
 
   document.querySelectorAll(".section-head").forEach((h) =>
     h.addEventListener("click", () => {
@@ -209,7 +214,7 @@ function showPanel(st) {
   renderList("staged-list", st.staged, "staged", $("staged-count"));
   renderList("unstaged-list", [...st.unstaged, ...st.untracked], "unstaged", $("unstaged-count"));
 
-  $("sec-conflicts").classList.toggle("has-conflicts", st.conflicts.length > 0);
+  $("sec-conflicts").classList.toggle("hidden", st.conflicts.length === 0);
   $("btn-ai-resolve").disabled = st.conflicts.length === 0;
   setToolbarEnabled(true);
   updateToolbar(st);
@@ -351,7 +356,18 @@ async function pushPull(kind) {
     toast(String(e), false);
   } finally {
     setBusy(false);
-    await refresh();
+  }
+  await refresh();
+  // 冲突只在拉取后提示,由用户决定是否用 AI 自动解决
+  if (kind === "pull") checkConflictsAfterPull();
+}
+
+async function checkConflictsAfterPull() {
+  if (!repo) return;
+  const st = await invoke("git_status", { repo });
+  if (st.conflicts.length > 0) {
+    $("merge-conflict-count").textContent = st.conflicts.length;
+    $("dlg-merge-conflict").classList.remove("hidden");
   }
 }
 
@@ -367,10 +383,18 @@ async function resolveAllConflicts() {
     const results = await invoke("ai_resolve_conflicts", { settings: settings.ai, repo });
     const okN = results.filter((r) => r.ok).length;
     const failN = results.length - okN;
+    let mergedNote = "";
+    if (failN === 0) {
+      // 全部解决后,若处于合并中则自动完成合并提交
+      try {
+        const mr = await invoke("git_finish_merge", { repo });
+        if (mr && mr.merged) mergedNote = " 已自动完成合并提交";
+      } catch (_) { /* 非合并状态或提交失败,保持已暂存状态 */ }
+    }
     $("conflict-detail").textContent = failN
       ? `成功 ${okN} 个,失败 ${failN} 个:` + results.filter((r) => !r.ok).map((r) => `\n• ${r.path}: ${r.error}`).join("")
-      : `全部 ${okN} 个冲突已由 AI 解决,文件已暂存`;
-    toast(failN ? `解决 ${okN} 个,${failN} 个失败` : "冲突已全部解决", failN === 0);
+      : `全部 ${okN} 个冲突已由 AI 解决,文件已暂存${mergedNote}。`;
+    toast(failN ? `解决 ${okN} 个,${failN} 个失败` : (mergedNote ? "冲突已解决并完成合并" : "冲突已解决"), failN === 0);
   } catch (e) {
     $("conflict-detail").textContent = String(e);
     toast(String(e), false);

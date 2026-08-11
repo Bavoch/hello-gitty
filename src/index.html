@@ -127,6 +127,19 @@
     </div>
   </div>
 
+  <!-- 拉取冲突决策 -->
+  <div class="overlay hidden" id="dlg-merge-conflict">
+    <div class="dialog">
+      <h3>拉取产生 <span id="merge-conflict-count">0</span> 个冲突</h3>
+      <p class="dlg-hint">可以让 AI 自动解决冲突并完成合并提交,也可以稍后手动处理。</p>
+      <div class="dlg-actions">
+        <button class="tool-btn" id="btn-merge-manual">稍后手动处理</button>
+        <span class="spacer"></span>
+        <button class="tool-btn primary" id="btn-merge-ai">AI 自动解决并合并</button>
+      </div>
+    </div>
+  </div>
+
   <!-- AI 冲突解决进度 -->
   <div class="overlay hidden" id="dlg-conflict">
     <div class="dialog">

@@ -340,6 +340,25 @@ pub fn conflict_files(repo: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// 检测是否处于合并中(MERGE_HEAD 存在),若是则用 git 准备的 MERGE_MSG 完成合并提交。
+/// 返回 (是否完成了合并, 提交输出);非合并状态返回 (false, "")。
+pub fn finish_merge(repo: &str) -> Result<(bool, String), String> {
+    let gd = run_git(repo, &["rev-parse", "--git-dir"])?;
+    let gd_path = std::path::Path::new(gd.trim());
+    let git_dir = if gd_path.is_absolute() {
+        gd_path.to_path_buf()
+    } else {
+        std::path::Path::new(repo).join(gd_path)
+    };
+    if !git_dir.join("MERGE_HEAD").exists() {
+        return Ok((false, String::new()));
+    }
+    let msg = std::fs::read_to_string(git_dir.join("MERGE_MSG")).unwrap_or_default();
+    let msg = if msg.trim().is_empty() { "Merge".into() } else { msg.trim().to_string() };
+    let out = commit(repo, &msg)?;
+    Ok((true, out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,6 +452,29 @@ mod tests {
         assert!(err.is_err(), "merge 应产生冲突");
         let cf = conflict_files(r);
         assert!(cf.contains(&"f.txt".to_string()));
+
+        // 手动解决后 finish_merge 应自动完成合并提交
+        assert!(conflict_files(r).contains(&"f.txt".to_string()));
+        std::fs::write(base.join("f.txt"), "line1\nmerged\nline2\n").unwrap();
+        stage_all(r).unwrap();
+        let (merged, _) = finish_merge(r).unwrap();
+        assert!(merged, "存在 MERGE_HEAD 时应完成合并提交");
+        assert!(conflict_files(r).is_empty(), "合并后不应再有冲突");
+        // 非合并状态调用返回 false 而非报错
+        let (merged2, _) = finish_merge(r).unwrap();
+        assert!(!merged2);
         std::fs::remove_dir_all(base).ok();
+    }
+
+    #[test]
+    fn finish_merge_noop_without_merge() {
+        let repo = temp_repo("noopmerge");
+        let r = repo.to_str().unwrap();
+        std::fs::write(repo.join("a.txt"), "x").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "init").unwrap();
+        let (merged, _) = finish_merge(r).unwrap();
+        assert!(!merged, "无 MERGE_HEAD 时不应合并");
+        std::fs::remove_dir_all(repo).ok();
     }
 }
