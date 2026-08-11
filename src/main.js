@@ -47,7 +47,6 @@ async function init() {
 }
 
 function bindEvents() {
-  $("btn-open").addEventListener("click", addRepo);
   $("btn-open2").addEventListener("click", addRepo);
   $("btn-add-repo").addEventListener("click", addRepo);
   $("btn-init").addEventListener("click", initRepo);
@@ -191,8 +190,6 @@ function showEmpty(showInit) {
   $("panel").classList.add("hidden");
   $("empty-state").classList.remove("hidden");
   $("btn-init").classList.toggle("hidden", !showInit);
-  $("repo-name").textContent = repo ? repo.split("/").pop() : "未打开仓库";
-  if (repo) $("repo-name").title = repo;
   $("sb-branch").textContent = "";
   $("sb-ab").textContent = "";
   $("sb-status").textContent = showInit ? "该文件夹还不是 Git 仓库" : "等待选择仓库";
@@ -202,8 +199,6 @@ function showEmpty(showInit) {
 function showPanel(st) {
   $("empty-state").classList.add("hidden");
   $("panel").classList.remove("hidden");
-  $("repo-name").textContent = st.repo.split("/").pop() || st.repo;
-  $("repo-name").title = st.repo;
 
   $("sb-branch").textContent = st.detached ? "(分离 HEAD)" : st.branch || "(无分支)";
   $("sb-ab").textContent =

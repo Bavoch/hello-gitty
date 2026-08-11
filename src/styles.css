@@ -63,12 +63,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--border);
 }
-.repo-chip {
-  display: flex; align-items: center; gap: 6px; max-width: 190px;
-  padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
-  color: var(--text-dim); font-size: 12px; overflow: hidden; white-space: nowrap;
-}
-#repo-name { overflow: hidden; text-overflow: ellipsis; }
 .tool-btn {
   padding: 4px 10px; border-radius: 4px; background: #0e639c33; border: 1px solid #0e639c;
   color: #9cdcfe; font-size: 12px;
@@ -76,7 +70,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .tool-btn:hover:not(:disabled) { background: #1177bb40; }
 .tool-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tool-btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
-.toolbar-divider { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
 
 /* ===== 主区 ===== */
 #workspace { flex: 1; display: flex; min-height: 0; }
