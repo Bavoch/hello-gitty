@@ -224,15 +224,19 @@ async fn git_push(app: tauri::AppHandle, repo: String) -> OpResult {
                 .unwrap_or_else(|e| Err(e.to_string())),
         );
     }
-    // 无远程仓库:配置了 GitHub Token 则自动创建私有仓库并推送
+    // 无远程仓库:按优先级探测凭据来源并自动创建
     let settings = SettingsStore::new(&app).load();
-    let token = settings.github_token.unwrap_or_default();
-    if token.trim().is_empty() {
-        return op(Err(
-            "还没有远程仓库。在设置页配置 GitHub Token 后,推送将自动创建远程仓库。".into(),
-        ));
-    }
-    match auto_create_and_push(&repo, token.trim()).await {
+    let configured = settings.github_token.unwrap_or_default();
+    let result = if !configured.trim().is_empty() {
+        auto_create_and_push(&repo, configured.trim()).await
+    } else if gh_authed() {
+        auto_create_via_gh(&repo)
+    } else if let Some(token) = system_github_token() {
+        auto_create_and_push(&repo, &token).await
+    } else {
+        Err("还没有远程仓库,也未找到可用的 GitHub 凭据。任选其一:① 设置页填写 GitHub Token;② 安装并登录 GitHub CLI(gh auth login);③ 在终端 git push 过一次 GitHub 仓库".into())
+    };
+    match result {
         Ok(o) => op(Ok(format!("已自动创建远程仓库并推送\n{o}"))),
         Err(e) => op(Err(e)),
     }
@@ -274,6 +278,70 @@ async fn auto_create_and_push(repo: &str, token: &str) -> Result<String, String>
     git::run_git(repo, &["remote", "add", "origin", clone_url])?;
     // push -u origin <branch>(git::push 内部处理无上游的情况)
     git::push(repo)
+}
+
+/// 策略 2:GitHub CLI 已登录时,一行命令创建 + 关联 + 推送
+fn auto_create_via_gh(repo: &str) -> Result<String, String> {
+    let name = std::path::Path::new(repo)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| "无法从路径确定仓库名".to_string())?;
+    run_gh(&[
+        "repo", "create", &name, "--private", "--source", repo, "--remote", "origin", "--push",
+    ])
+    .map_err(|e| format!("GitHub CLI 创建失败: {e}"))
+}
+
+fn gh_authed() -> bool {
+    run_gh(&["auth", "status"]).is_ok()
+}
+
+fn run_gh(args: &[&str]) -> Result<String, String> {
+    for gh in ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"] {
+        let out = std::process::Command::new(gh).args(args).output().ok();
+        if let Some(o) = out {
+            let text = String::from_utf8_lossy(&o.stdout).to_string();
+            if o.status.success() {
+                return Ok(text.trim().to_string());
+            }
+            return Err(format!(
+                "{} {}",
+                String::from_utf8_lossy(&o.stderr).trim(),
+                text.trim()
+            ));
+        }
+    }
+    Err("未找到 gh 命令".into())
+}
+
+/// 策略 3:从系统 git 凭据(Keychain)中读取 GitHub token
+fn system_github_token() -> Option<String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = std::process::Command::new("git")
+        .args(["credential", "fill"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    child
+        .stdin
+        .as_mut()?
+        .write_all(b"protocol=https\nhost=github.com\n\n")
+        .ok()?;
+    let output = child.wait_with_output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    let pw = text
+        .lines()
+        .find_map(|l| l.strip_prefix("password=").map(|p| p.to_string()))?;
+    // 仅接受 token 形态的凭据(OAuth 形态的 password 无法用于 API)
+    if pw.starts_with("ghp_") || pw.starts_with("github_pat_") || pw.starts_with("gho_") {
+        Some(pw)
+    } else {
+        None
+    }
 }
 
 #[tauri::command]
