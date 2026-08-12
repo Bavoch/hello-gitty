@@ -81,6 +81,18 @@ select option { background: #3c3c3c; color: var(--text); }
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--border);
 }
+/* 推送/拉取按钮:领先提交数徽标(推送=蓝色,拉取=红色) */
+#btn-push, #btn-pull { position: relative; }
+.btn-count {
+  position: absolute; top: -3px; right: -4px;
+  min-width: 14px; height: 14px; padding: 0 3px;
+  border-radius: 7px;
+  font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
+  pointer-events: none;
+}
+.btn-count.push { background: var(--blue); color: #1e1e1e; }
+.btn-count.pull { background: var(--red); color: #fff; }
+
 /* 幽灵按钮:透明底 + 描边 + 图标文字;悬停只变背景,边框保持不变 */
 .tool-btn {
   display: inline-flex; align-items: center; gap: 5px;
@@ -90,8 +102,12 @@ select option { background: #3c3c3c; color: var(--text); }
 }
 .tool-btn svg { flex: none; }
 .tool-btn:hover:not(:disabled) { background: var(--hover-strong); }
-/* 主操作:加粗文字区分,不用颜色 */
-.tool-btn.primary { font-weight: 600; }
+/* 主操作:主题色实心按钮 */
+.tool-btn.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  font-weight: 600;
+}
+.tool-btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 .tool-btn.danger { color: var(--text); }
 .dlg-hint.warn { color: var(--red); }
 
@@ -160,13 +176,13 @@ select option { background: #3c3c3c; color: var(--text); }
   position: relative; /* 拖拽竖线的定位锚点 */
 }
 /* 拖拽竖线覆盖在侧栏右缘上(绝对定位),不占布局宽度;透明背景不遮挡内容区左边框;
-   z-index 保证指示线在任何内容(分组标题等)之上 */
+   z-index 30:高于全部内容(分组标题等),但低于模态遮罩(z-50),弹窗打开时不可见也不可拖 */
 #sidebar-resizer {
   position: absolute; top: 0; bottom: 0; right: -1.5px;
   width: 3px; cursor: col-resize;
   background: transparent;
   transition: background .12s;
-  z-index: 1000;
+  z-index: 30;
 }
 /* 拖动热区(左右各 2px),视觉仍保持 3px 细线 */
 #sidebar-resizer::before { content: ""; position: absolute; inset: 0 -2px; }
@@ -412,8 +428,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .dialog h3 { color: #e8e8e8; font-size: 14px; }
 
-/* 设置弹窗:左侧分组导航 */
+/* 设置弹窗:顶部标题栏 + 左侧分组导航 */
 .settings-dialog { padding: 0; gap: 0; overflow: hidden; width: min(560px, 94vw); height: min(440px, 80vh); }
+.settings-title {
+  flex: none; padding: 12px 18px;
+  font-size: 13px; font-weight: 600; color: var(--text-head);
+  border-bottom: 1px solid var(--border);
+}
 .settings-main { display: flex; flex: 1; min-height: 0; }
 .settings-nav {
   flex: none; width: 142px; padding: 14px 10px;

@@ -14,6 +14,7 @@ let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [] };
 let repos = []; // 侧栏仓库摘要列表
 let repo = null;
 let busy = false;
+let pendingPush = false; // 推送流程:等待手动填写提交信息后自动继续推送
 let toastTimer = null;
 let promptPresets = [];
 
@@ -198,7 +199,10 @@ function bindEvents() {
       document.querySelectorAll(".settings-tab").forEach((t) => t.classList.toggle("hidden", t.dataset.tab !== tab));
     });
   });
-  $("btn-commit-cancel").addEventListener("click", () => $("dlg-commit").classList.add("hidden"));
+  $("btn-commit-cancel").addEventListener("click", () => {
+    pendingPush = false; // 取消手动填写:中止自动推送流程
+    $("dlg-commit").classList.add("hidden");
+  });
   $("btn-commit-confirm").addEventListener("click", doCommit);
   $("btn-regen").addEventListener("click", regenMessage);
   $("btn-conflict-done").addEventListener("click", () => $("dlg-conflict").classList.add("hidden"));
@@ -286,7 +290,8 @@ async function doClone() {
 }
 
 async function loadRepos() {
-  try { repos = await invoke("repos_status_all"); } catch (_) { repos = []; }
+  try { repos = await invoke("repos_status_all"); }
+  catch (_) { /* 扫描失败时保留现有列表,不清空 */ }
   renderRepoList();
 }
 
@@ -357,6 +362,9 @@ function renderRepoList() {
     ul.appendChild(li);
   }
   fitAllPaths(); // 渲染完成后按当前侧栏宽度做路径智能省略
+  // 当前项(含新添加的项目)滚动到可视区,避免列表末尾新项在滚动区外不可见
+  const active = ul.querySelector(".repo-item.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
 }
 
 // 路径智能省略:完整路径放得下就完整显示;放不下时保留「开头 + … + 结尾目录名」,
@@ -671,6 +679,8 @@ function showEmpty(showInit) {
   }
   $("branch-name").textContent = "—";
   $("branch-name").title = "";
+  if ($("push-count")) $("push-count").classList.add("hidden");
+  if ($("pull-count")) $("pull-count").classList.add("hidden");
 }
 
 function showPanel(st) {
@@ -687,6 +697,17 @@ function showPanel(st) {
   // 右侧面板显示当前分支
   $("branch-name").textContent = st.detached ? "（分离）" : (st.branch || "（无分支）");
   $("branch-name").title = st.branch || "";
+  // 领先/落后提交数徽标:推送按钮显示 ahead,拉取按钮显示 behind
+  // (空值保护:HTML 与 JS 版本错位时不能中断整个刷新)
+  const pc = $("push-count"), lc = $("pull-count");
+  if (pc) {
+    pc.classList.toggle("hidden", !(st.ahead > 0));
+    if (st.ahead > 0) pc.textContent = st.ahead;
+  }
+  if (lc) {
+    lc.classList.toggle("hidden", !(st.behind > 0));
+    if (st.behind > 0) lc.textContent = st.behind;
+  }
 }
 
 /* ===== 文件列表 ===== */
@@ -807,7 +828,8 @@ function stChar(e, kind) {
 /* ===== 操作 ===== */
 async function stageAll(stage) {
   const btn = stage ? $("btn-stage-all") : $("btn-unstage-all");
-  setButtonLoading(btn, true, stage ? "暂存中" : "取消中");
+  // 图标按钮:加载态只显示 spinner,不附加文字(文字会撑破 28px 按钮)
+  setButtonLoading(btn, true, "");
   try {
     await invoke(stage ? "git_stage_all" : "git_unstage_all", { repo });
   } catch (e) {
@@ -845,8 +867,9 @@ async function onCommit() {
     msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
     // 直接提交模式:AI 生成后立即提交
     if (settings.ai.commit_mode === "auto") {
-      await invoke("git_commit", { repo, message: msg });
-      toast("提交成功", true);
+      const r = await invoke("git_commit", { repo, message: msg });
+      if (r && r.ok === false) toast(r.output, false);
+      else toast("提交成功", true);
       await refresh();
       return;
     }
@@ -886,8 +909,16 @@ async function doCommit() {
   // 弹窗关闭后,在工具栏提交按钮上体现加载状态
   setButtonLoading($("btn-commit"), true, "提交中…");
   try {
-    await invoke("git_commit", { repo, message: msg });
-    toast("提交成功", true);
+    const r = await invoke("git_commit", { repo, message: msg });
+    if (r && r.ok === false) toast(r.output, false);
+    else {
+      toast("提交成功", true);
+      // 由推送触发的手动填写:提交完成后自动继续推送
+      if (pendingPush) {
+        pendingPush = false;
+        await doPush();
+      }
+    }
   } catch (e) {
     toast(String(e), false);
   } finally {
@@ -896,25 +927,61 @@ async function doCommit() {
   await refresh();
 }
 
-async function pushPull(kind) {
-  const btn = kind === "push" ? $("btn-push") : $("btn-pull");
-  setButtonLoading(btn, true, kind === "push" ? "推送中…" : "拉取中…");
+// 实际推送(git_push + 授权引导)
+async function doPush() {
+  const btn = $("btn-push");
+  setButtonLoading(btn, true, "推送中…");
   try {
-    const r = await invoke(kind === "push" ? "git_push" : "git_pull", { repo });
+    const r = await invoke("git_push", { repo });
     toast(r.output, r.ok);
     // 无远程且无凭据:引导浏览器授权
-    if (kind === "push" && !r.ok && r.output.startsWith("[NEED_AUTH]")) {
-      askGithubToken();
-    }
+    if (!r.ok && r.output.startsWith("[NEED_AUTH]")) askGithubToken();
   } catch (e) {
-    if (kind === "push" && String(e).includes("[NEED_AUTH]")) askGithubToken();
+    if (String(e).includes("[NEED_AUTH]")) askGithubToken();
     else toast(String(e), false);
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function pushPull(kind) {
+  if (kind === "push") {
+    // 推送前:本地所有修改(暂存+未暂存+未跟踪)全部提交,再推送
+    try {
+      const st = await invoke("git_status", { repo });
+      if (st.staged.length + st.unstaged.length + st.untracked.length > 0) {
+        await invoke("git_stage_all", { repo });
+        let msg = "";
+        try {
+          msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
+        } catch (e) {
+          // AI 不可用:手动填写提交信息,确认后自动继续推送
+          pendingPush = true;
+          showCommitDialog("", "AI 生成提交信息失败：" + e + " 请手动填写，确认后将自动推送");
+          return;
+        }
+        const r = await invoke("git_commit", { repo, message: msg });
+        if (r && r.ok === false) { toast(r.output, false); return; }
+      }
+    } catch (e) { toast(String(e), false); return; }
+    await doPush();
+    await refresh();
+    return;
+  }
+  // 拉取
+  const btn = $("btn-pull");
+  setButtonLoading(btn, true, "拉取中…");
+  try {
+    const r = await invoke("git_pull", { repo });
+    toast(r.output, r.ok);
+  } catch (e) {
+    toast(String(e), false);
   } finally {
     setButtonLoading(btn, false);
   }
   await refresh();
   // 冲突只在拉取后提示,由用户决定是否用 AI 自动解决
-  if (kind === "pull") checkConflictsAfterPull();
+  checkConflictsAfterPull();
 }
 
 /* ===== GitHub 浏览器授权 ===== */

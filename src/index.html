@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hello Gitty</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260813" />
   <script>
     // 仅开发模式(http://localhost:1420)生效:检测源文件变更后自动刷新窗口
     if (location.protocol === "http:") {
@@ -15,10 +15,13 @@
           for (const f of files) {
             try {
               const res = await fetch(f, { method: "HEAD", cache: "no-store" });
-              const lm = res.headers.get("last-modified");
-              if (!lm) continue;
-              if (mtimes[f] && lm !== mtimes[f]) { location.reload(); return; }
-              mtimes[f] = lm;
+              const lm = res.headers.get("last-modified") || "";
+              const len = res.headers.get("content-length") || "";
+              if (!lm && !len) continue;
+              // 尺寸兜底:Last-Modified 秒级精度,同秒内修改可能漏检
+              const key = lm + "|" + len;
+              if (mtimes[f] && key !== mtimes[f]) { location.reload(); return; }
+              mtimes[f] = key;
             } catch (_) { /* 服务器未就绪时忽略 */ }
           }
         }, 800);
@@ -61,17 +64,19 @@
           </button>
           <div id="branch-menu" class="branch-menu hidden"></div>
         </div>
-        <button id="btn-commit" class="tool-btn primary">
+        <button id="btn-commit" class="tool-btn">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
           提交
         </button>
         <button id="btn-push" class="tool-btn">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
           推送
+          <span id="push-count" class="btn-count push hidden" title="本地领先的提交数"></span>
         </button>
         <button id="btn-pull" class="tool-btn">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
           拉取
+          <span id="pull-count" class="btn-count pull hidden" title="远程领先的提交数"></span>
         </button>
         <span class="busy-ind hidden" id="sb-busy">
           <span class="spinner"></span><span id="sb-busy-text">处理中…</span>
@@ -243,6 +248,7 @@
   <!-- 设置 -->
   <div class="overlay hidden" id="dlg-settings">
     <div class="dialog settings-dialog">
+      <div class="settings-title">系统设置</div>
       <div class="settings-main">
         <div class="settings-nav">
           <button class="settings-nav-item active" data-tab="ai"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.4a3 3 0 0 0 1.8 1.8L21 12l-5.4 1.8a3 3 0 0 0-1.8 1.8L12 21l-1.8-5.4a3 3 0 0 0-1.8-1.8L3 12l5.4-1.8a3 3 0 0 0 1.8-1.8z"/></svg>AI 模型配置</button>
@@ -357,6 +363,6 @@
   <div id="toast"></div>
   <div id="commit-tip" class="commit-tip hidden"></div>
 
-  <script src="main.js"></script>
+  <script src="main.js?v=20260813"></script>
 </body>
 </html>
