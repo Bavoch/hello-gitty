@@ -69,9 +69,6 @@ const ICON_LOCATIONS: &[&str] = &[
     "images/icon128.png", "images/icon.png",
 ];
 
-/// 通用项目兜底图标(灰色文件夹)
-const FALLBACK_ICON_SVG: &str = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='#8a8a8a' d='M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z'/></svg>";
-
 /// 读取图片文件转 base64 data URL;文件缺失/空/超限返回 None
 fn read_icon_data_url(path: &std::path::Path) -> Option<String> {
     use base64::Engine as _;
@@ -124,7 +121,7 @@ fn chrome_manifest_icon(repo_path: &std::path::Path) -> Option<String> {
 }
 
 /// 读取项目图标文件,转为 base64 data URL;
-/// 找不到真实图标时返回通用文件夹图标(保证每个项目都有图标)
+/// 找不到真实图标时返回 None(前端渲染「首字符 + 稳定配色」字母头像)
 fn repo_icon_data_url(repo: &str) -> Option<String> {
     use base64::Engine as _;
     let repo_path = std::path::Path::new(repo);
@@ -138,11 +135,8 @@ fn repo_icon_data_url(repo: &str) -> Option<String> {
             return Some(url);
         }
     }
-    // 3. 兜底:通用文件夹图标
-    Some(format!(
-        "data:image/svg+xml;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(FALLBACK_ICON_SVG.as_bytes())
-    ))
+    // 3. 无真实图标:返回 None,前端兜底字母头像
+    None
 }
 
 fn summarize(path: &str) -> RepoSummary {
@@ -174,9 +168,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("hellogitty-icon-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        // 空目录 → 兜底文件夹图标
-        let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
-        assert!(url.starts_with("data:image/svg+xml;base64,"), "空目录应返回兜底图标");
+        // 空目录 → 无真实图标(None,前端渲染字母头像)
+        assert!(repo_icon_data_url(dir.to_str().unwrap()).is_none(), "空目录应无图标");
         // 根目录 icon.png → data URL
         std::fs::write(dir.join("icon.png"), vec![0x89, 0x50, 0x4e, 0x47]).unwrap();
         let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
@@ -205,15 +198,14 @@ mod tests {
         .unwrap();
         let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
         assert!(url.starts_with("data:image/png;base64,"), "manifest icons 应被解析");
-        // 路径含 .. 应被拒绝,回退文件夹兜底
-        std::fs::remove_file(dir.join("icons/icon128.png")).unwrap(); // 清掉候选路径命中,确保走兜底
+        // 路径含 .. 应被拒绝,无图标
+        std::fs::remove_file(dir.join("icons/icon128.png")).unwrap(); // 清掉候选路径命中,确保返回 None
         std::fs::write(
             dir.join("manifest.json"),
             r#"{"manifest_version":3,"icons":{"128":"../../etc/passwd"}}"#,
         )
         .unwrap();
-        let url = repo_icon_data_url(dir.to_str().unwrap()).unwrap();
-        assert!(url.starts_with("data:image/svg+xml"), "穿越路径应被拒绝");
+        assert!(repo_icon_data_url(dir.to_str().unwrap()).is_none(), "穿越路径应被拒绝");
         std::fs::remove_dir_all(&dir).ok();
     }
 }
@@ -261,6 +253,56 @@ fn git_init(repo: String) -> Result<(), String> {
     git::run_git(&repo, &["init", "-q"]).map(|_| ())
 }
 
+/// 读取项目根目录的 .gitignore 内容;文件不存在则返回空串
+#[tauri::command]
+fn gitignore_read(repo: String) -> Result<String, String> {
+    let path = std::path::Path::new(&repo).join(".gitignore");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path).map_err(|e| format!("读取 .gitignore 失败： {e}"))
+}
+
+/// 写入项目根目录的 .gitignore(覆盖)
+#[tauri::command]
+fn gitignore_write(repo: String, content: String) -> Result<(), String> {
+    let path = std::path::Path::new(&repo).join(".gitignore");
+    std::fs::write(&path, content).map_err(|e| format!("写入 .gitignore 失败： {e}"))
+}
+
+/// 克隆远程仓库到指定本地目录
+#[tauri::command]
+async fn git_clone(url: String, dest: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let out = std::process::Command::new("git")
+            .arg("clone")
+            .arg(&url)
+            .arg(&dest)
+            .output()
+            .map_err(|e| format!("无法执行 git clone： {e}"))?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 取单个文件的 diff(staged=true 取已暂存差异,否则取工作区差异)
+#[tauri::command]
+async fn git_diff(repo: String, path: String, staged: bool) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if staged {
+            git::run_git(&repo, &["diff", "--cached", "--no-color", "--no-ext-diff", "--", &path])
+        } else {
+            git::run_git(&repo, &["diff", "--no-color", "--no-ext-diff", "--", &path])
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 文件夹选择走 Rust 侧 dialog 插件,前端只依赖 core.invoke
 #[tauri::command]
 async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
@@ -273,7 +315,7 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     match picked {
         Some(p) => match p.into_path() {
             Ok(path) => Ok(Some(path.to_string_lossy().to_string())),
-            Err(e) => Err(format!("读取所选路径失败: {e}")),
+            Err(e) => Err(format!("读取所选路径失败： {e}")),
         },
         None => Ok(None),
     }
@@ -295,7 +337,7 @@ struct RemoteHistory {
     commits: Vec<git::CommitInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 struct History {
     head: Option<String>,
     commits: Vec<git::CommitInfo>,
@@ -335,6 +377,56 @@ async fn git_history(repo: String) -> History {
         None => (git::log(&repo, 20), None),
     };
     History { head, commits, remote }
+}
+
+#[derive(Serialize)]
+struct RefreshResult {
+    status: git::RepoStatus,
+    history: History,
+}
+
+/// 合并 status + history 的单次刷新命令:1 次 status 即拿到 branch/upstream/ahead/behind/head,
+/// 再据此只跑必要的 log,省掉 git_history 里重复的 head_hash/upstream/ahead/behind 进程。
+/// 切换仓库的 git 进程数从最多 7 次降到 3 次(无上游 2-3 次),显著降低 Windows 切换延迟。
+#[tauri::command]
+async fn git_refresh(repo: String) -> RefreshResult {
+    use tauri::async_runtime::spawn_blocking;
+    let r0 = repo.clone();
+    let st = spawn_blocking(move || git::status(&r0)).await.unwrap_or_default();
+
+    if !st.is_repo {
+        return RefreshResult { status: st, history: History::default() };
+    }
+
+    let head = st.head.clone();
+    // upstream 取自 status(已解析);未设置上游时才兜底查第一个远程跟踪分支
+    let remote_name = st.upstream.clone().or_else(|| git::first_remote_branch(&repo));
+    let ahead = st.ahead;
+    let behind = st.behind;
+
+    let (commits, remote) = match remote_name {
+        Some(name) => {
+            let local_n = ((20 + ahead).clamp(20, 500)) as usize;
+            let remote_n = ((20 + behind).clamp(20, 500)) as usize;
+            let r3 = repo.clone();
+            let r4 = repo.clone();
+            let n2 = name.clone();
+            let local_job = spawn_blocking(move || git::log_ref(&r3, "HEAD", local_n));
+            let remote_job = spawn_blocking(move || git::log_ref(&r4, &n2, remote_n));
+            let commits = local_job.await.unwrap_or_default();
+            let remote_commits = remote_job.await.unwrap_or_default();
+            (commits, Some(RemoteHistory { name, commits: remote_commits }))
+        }
+        None => {
+            let r3 = repo.clone();
+            (spawn_blocking(move || git::log(&r3, 20)).await.unwrap_or_default(), None)
+        }
+    };
+
+    RefreshResult {
+        status: st,
+        history: History { head, commits, remote },
+    }
 }
 
 #[tauri::command]
@@ -424,7 +516,7 @@ async fn git_push(repo: String) -> OpResult {
         auto_create_and_push(&repo, &token).await
     } else {
         // 引导用户去浏览器授权(前端识别该标记后打开认证页)
-        Err("[NEED_AUTH]还没有远程仓库,也未找到可用的 GitHub 凭据".into())
+        Err("[NEED_AUTH]还没有远程仓库，也未找到可用的 GitHub 凭据".into())
     };
     match result {
         Ok(o) => op(Ok(format!("已自动创建远程仓库并推送\n{o}"))),
@@ -454,12 +546,12 @@ async fn open_auth_page() -> Result<(), String> {
     let out = std::process::Command::new("open")
         .arg(url)
         .output()
-        .map_err(|e| format!("无法打开浏览器: {e}"))?;
+        .map_err(|e| format!("无法打开浏览器： {e}"))?;
     if out.status.success() {
         Ok(())
     } else {
         Err(format!(
-            "无法打开浏览器: {}",
+            "无法打开浏览器： {}",
             String::from_utf8_lossy(&out.stderr).trim()
         ))
     }
@@ -504,11 +596,11 @@ async fn auto_create_and_push(repo: &str, token: &str) -> Result<String, String>
         .json(&serde_json::json!({ "name": name, "private": true, "auto_init": false }))
         .send()
         .await
-        .map_err(|e| format!("请求 GitHub API 失败: {e}"))?;
+        .map_err(|e| format!("请求 GitHub API 失败： {e}"))?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        return Err(format!("GitHub 创建仓库失败({status}): {text}"));
+        return Err(format!("GitHub 创建仓库失败（{status}）： {text}"));
     }
     let v: serde_json::Value =
         serde_json::from_str(&text).map_err(|_| "GitHub 响应解析失败".to_string())?;
@@ -534,7 +626,7 @@ fn auto_create_via_gh(repo: &str) -> Result<String, String> {
     let out = run_gh(&[
         "repo", "create", &name, "--private", "--source", repo, "--remote", "origin", "--push",
     ])
-    .map_err(|e| format!("GitHub CLI 创建失败: {e}"))?;
+    .map_err(|e| format!("GitHub CLI 创建失败： {e}"))?;
     // gh 的 --push 可能不设置上游,补一次 push -u,保证远程历史/后续推送正常
     if git::upstream(repo).is_none() {
         if let Some(branch) = git::status(repo).branch {
@@ -657,11 +749,16 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             settings_load,
             settings_save,
             git_status,
             git_init,
+            gitignore_read,
+            gitignore_write,
+            git_clone,
+            git_diff,
             pick_folder,
             window_set_always_on_top,
             repos_status_all,
@@ -679,6 +776,7 @@ pub fn run() {
             git_pull,
             git_finish_merge,
             git_history,
+            git_refresh,
             git_reset_hard,
             git_branches,
             git_checkout,

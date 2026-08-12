@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../src",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "python3 -m http.server 1420 --directory ../src",
+    "beforeDevCommand": "python -m http.server 1420 --directory ./src",
     "beforeBuildCommand": ""
   },
   "app": {
@@ -14,9 +14,9 @@
     "windows": [
       {
         "title": "Hello Gitty",
-        "width": 480,
+        "width": 760,
         "height": 680,
-        "minWidth": 400,
+        "minWidth": 580,
         "minHeight": 500,
         "resizable": true,
         "fullscreen": false

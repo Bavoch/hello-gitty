@@ -33,9 +33,9 @@ fn default_preset() -> String {
 impl Default for AiConfig {
     fn default() -> Self {
         Self {
-            base_url: "https://api.openai.com/v1".into(),
+            base_url: "https://api.deepseek.com".into(),
             api_key: String::new(),
-            model: "gpt-4o-mini".into(),
+            model: "deepseek-v4-flash".into(),
             lang: "中文".into(),
             commit_mode: default_commit_mode(),
             prompt_preset: default_preset(),
@@ -55,37 +55,37 @@ pub struct PromptPreset {
     pub user_template: String,
 }
 
-const USER_TAIL: &str = "\n\n以下是本次要提交的全部变更:\n\n{diff}\n\n请生成提交信息。";
+const USER_TAIL: &str = "\n\n以下是本次要提交的全部变更：\n\n{diff}\n\n请生成提交信息。";
 
 pub fn presets() -> Vec<PromptPreset> {
     vec![
         PromptPreset {
             id: "conventional".into(),
             name: "常规提交".into(),
-            description: "Conventional Commits 规范,主题 + 正文,语言跟随上方设置".into(),
-            system: "你是一名资深软件工程师,负责为代码变更撰写简洁、专业的 git 提交信息。遵循 Conventional Commits 规范(type: subject),主语用祈使句,主题不超过 72 字符,正文说明变更的原因与影响,必要时给出要点列表。只输出提交信息本身,不要任何解释或代码块标记。".into(),
+            description: "Conventional Commits 规范，主题 + 正文，语言跟随上方设置".into(),
+            system: "你是一名资深软件工程师，负责为代码变更撰写简洁、专业的 git 提交信息。遵循 Conventional Commits 规范（type: subject），主语用祈使句，主题不超过 72 字符，正文说明变更的原因与影响，必要时给出要点列表。只输出提交信息本身,不要任何解释或代码块标记。".into(),
             user_template: format!("{{lang}}\n\n{{log}}{}", USER_TAIL),
         },
         PromptPreset {
             id: "concise".into(),
             name: "极简一句".into(),
-            description: "只输出一行主题,不超过 72 字符".into(),
-            system: "你是一名资深软件工程师,为代码变更撰写一行式 git 提交信息。用祈使句概括变更,不超过 72 字符,遵循 Conventional Commits 规范(type: subject)。只输出提交信息本身,不要解释或代码块标记。".into(),
-            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更:\n\n{diff}\n\n请只生成一行提交信息。".into(),
+            description: "只输出一行主题，不超过 72 字符".into(),
+            system: "你是一名资深软件工程师，为代码变更撰写一行式 git 提交信息。用祈使句概括变更，不超过 72 字符，遵循 Conventional Commits 规范（type: subject）。只输出提交信息本身,不要解释或代码块标记。".into(),
+            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更：\n\n{diff}\n\n请只生成一行提交信息。".into(),
         },
         PromptPreset {
             id: "detailed".into(),
             name: "详尽报告".into(),
-            description: "主题 + 详细正文,覆盖背景、影响范围与注意事项".into(),
-            system: "你是一名资深软件工程师,为代码变更撰写详尽的 git 提交信息。遵循 Conventional Commits 规范:主题后空一行接正文。正文说明变更背景、具体内容、影响范围与注意事项,使用要点列表组织。只输出提交信息本身,不要代码块标记。".into(),
-            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更:\n\n{diff}\n\n请生成提交信息(主题 + 详细正文)。".into(),
+            description: "主题 + 详细正文，覆盖背景、影响范围与注意事项".into(),
+            system: "你是一名资深软件工程师，为代码变更撰写详尽的 git 提交信息。遵循 Conventional Commits 规范：主题后空一行接正文。正文说明变更背景、具体内容、影响范围与注意事项，使用要点列表组织。只输出提交信息本身,不要代码块标记。".into(),
+            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更：\n\n{diff}\n\n请生成提交信息（主题 + 详细正文）。".into(),
         },
         PromptPreset {
             id: "gitmoji".into(),
             name: "Gitmoji 表情".into(),
-            description: "以表情符号开头(✨ 新功能 / 🐛 修复 / 📝 文档…),中文开发者常用".into(),
-            system: "你是一名资深软件工程师,使用 Gitmoji 规范撰写 git 提交信息:以合适的表情符号开头(如 ✨ 新功能、🐛 修复、📝 文档、♻️ 重构、🚀 性能),后接简短主题,必要时附正文。只输出提交信息本身,不要代码块标记。".into(),
-            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更:\n\n{diff}\n\n请生成 Gitmoji 风格的提交信息。".into(),
+            description: "以表情符号开头（✨ 新功能 / 🐛 修复 / 📝 文档…），中文开发者常用".into(),
+            system: "你是一名资深软件工程师，使用 Gitmoji 规范撰写 git 提交信息：以合适的表情符号开头（如 ✨ 新功能、🐛 修复、📝 文档、♻️ 重构、🚀 性能），后接简短主题，必要时附正文。只输出提交信息本身,不要代码块标记。".into(),
+            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更：\n\n{diff}\n\n请生成 Gitmoji 风格的提交信息。".into(),
         },
     ]
 }
@@ -97,7 +97,7 @@ pub fn preset_by_id(id: &str) -> Option<PromptPreset> {
 /// 根据语言设置生成注入模板的语言指令
 pub fn lang_instruction(lang: &str) -> String {
     match lang {
-        "英文" => "请用英文撰写提交信息(Write the commit message in English)。".into(),
+        "英文" => "请用英文撰写提交信息（Write the commit message in English）。".into(),
         _ => "请用简体中文撰写提交信息。".into(),
     }
 }
@@ -112,7 +112,7 @@ pub fn render_template(template: &str, diff: &str, log_hint: &str, lang: &str) -
 
 async fn chat(cfg: &AiConfig, system: &str, user: &str) -> Result<String, String> {
     if cfg.api_key.trim().is_empty() {
-        return Err("尚未配置 AI API Key,请点击右上角设置完成配置".into());
+        return Err("尚未配置 AI API Key，请点击右上角设置完成配置".into());
     }
     let base = cfg.base_url.trim().trim_end_matches('/');
     let url = format!("{base}/chat/completions");
@@ -132,11 +132,11 @@ async fn chat(cfg: &AiConfig, system: &str, user: &str) -> Result<String, String
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("请求 AI 服务失败: {e}"))?;
+        .map_err(|e| format!("请求 AI 服务失败： {e}"))?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        return Err(format!("AI 服务返回错误({status}): {text}"));
+        return Err(format!("AI 服务返回错误（{status}）： {text}"));
     }
     let v: serde_json::Value = serde_json::from_str(&text).map_err(|_| "AI 服务响应解析失败".to_string())?;
     let content = v
@@ -172,7 +172,7 @@ pub async fn generate_commit_message(cfg: &AiConfig, repo: &str) -> Result<Strin
     let log_hint = if log.is_empty() {
         String::new()
     } else {
-        format!("仓库近期的提交风格参考:\n{}\n", log.join("\n"))
+        format!("仓库近期的提交风格参考：\n{}\n", log.join("\n"))
     };
     let lang = lang_instruction(&cfg.lang);
 
@@ -197,20 +197,20 @@ pub async fn generate_commit_message(cfg: &AiConfig, repo: &str) -> Result<Strin
 pub async fn resolve_conflict_file(cfg: &AiConfig, repo: &str, path: &str) -> Result<(), String> {
     let full = Path::new(repo).join(path);
     let content = std::fs::read_to_string(&full)
-        .map_err(|e| format!("读取 {path} 失败: {e}"))?;
+        .map_err(|e| format!("读取 {path} 失败： {e}"))?;
     if content.len() > MAX_CONFLICT_FILE_BYTES {
-        return Err(format!("{path} 过大({}KB),超出 AI 处理上限,请手动解决", content.len() / 1024));
+        return Err(format!("{path} 过大（{}KB），超出 AI 处理上限，请手动解决", content.len() / 1024));
     }
     if !content.contains("<<<<<<<") && !content.contains("=======") {
         // 无冲突标记(例如文件级删除冲突),跳过
-        return Err(format!("{path} 未包含冲突标记,请手动处理"));
+        return Err(format!("{path} 未包含冲突标记，请手动处理"));
     }
-    let system = "你是一名擅长解决 git 合并冲突的资深工程师。合并冲突时保留双方代码的正确意图,保证语法与语义正确,不留下任何冲突标记(<<<<<<< ======= >>>>>>>),也不添加解释性文字。只输出合并后的完整文件内容。";
-    let user = format!("文件路径:{path}\n\n文件内容(含冲突标记):\n```\n{content}\n```\n\n请输出解决冲突后的完整文件内容。");
+    let system = "你是一名擅长解决 git 合并冲突的资深工程师。合并冲突时保留双方代码的正确意图，保证语法与语义正确，不留下任何冲突标记（<<<<<<< ======= >>>>>>>），也不添加解释性文字。只输出合并后的完整文件内容。";
+    let user = format!("文件路径：{path}\n\n文件内容（含冲突标记）：\n```\n{content}\n```\n\n请输出解决冲突后的完整文件内容。");
     let resolved = chat(cfg, system, &user).await?;
     // 防御:AI 可能再次包上代码块
     let resolved = clean_markdown(resolved);
-    std::fs::write(&full, resolved).map_err(|e| format!("写入 {path} 失败: {e}"))?;
+    std::fs::write(&full, resolved).map_err(|e| format!("写入 {path} 失败： {e}"))?;
     git::stage_file(repo, path)?;
     Ok(())
 }

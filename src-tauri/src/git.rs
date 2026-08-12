@@ -1,5 +1,7 @@
 use serde::Serialize;
+use std::collections::HashMap;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 
 pub const MAX_AI_DIFF_BYTES: usize = 60_000;
 
@@ -26,19 +28,90 @@ pub struct RepoStatus {
     pub behind: i32,
     pub unborn: bool,
     pub detached: bool,
+    /// 当前 HEAD 的 oid(取自 status 的 branch.oid),unborn 时为 None
+    pub head: Option<String>,
     pub staged: Vec<FileEntry>,
     pub unstaged: Vec<FileEntry>,
     pub untracked: Vec<FileEntry>,
     pub conflicts: Vec<FileEntry>,
 }
 
+/// 每个仓库一把互斥锁:同一仓库的 git 命令串行执行。
+/// 暂存/提交/回退等写操作会创建 .git/index.lock,两个 git 进程并发写时,
+/// 后者会误报"另一个 git 进程正在运行"。读命令也走同一把锁,避免读到
+/// 写操作中途的不一致状态。
+static REPO_GIT_LOCKS: Mutex<Option<HashMap<String, Arc<Mutex<()>>>>> = Mutex::new(None);
+
+fn repo_git_lock(repo: &str) -> Arc<Mutex<()>> {
+    let mut map = REPO_GIT_LOCKS.lock().unwrap_or_else(|e| e.into_inner());
+    let map = map.get_or_insert_with(HashMap::new);
+    map.entry(repo.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
+
+/// 判断 stderr 是否为 index 锁冲突(git 的"另一个 git 进程"提示)
+fn is_lock_error(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    m.contains("index.lock") || m.contains("another git process")
+}
+
+/// 删除过期的 index.lock 残留:上次 git 写操作被终止(崩溃/强杀)会留下 0 字节锁文件。
+/// 锁文件协议只在最终 rename 时替换 index,删除残留锁不会损坏索引。
+/// 超过 60 秒仍存在的锁才视为残留——正常写操作远快于此;太新的锁可能是
+/// 其他工具正在进行中的操作,不处理。
+fn remove_stale_index_lock(repo: &str) -> bool {
+    let gd = match Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", "--git-dir"])
+        .output()
+    {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        _ => return false,
+    };
+    let gd_path = std::path::Path::new(&gd);
+    let git_dir = if gd_path.is_absolute() {
+        gd_path.to_path_buf()
+    } else {
+        std::path::Path::new(repo).join(gd_path)
+    };
+    let lock = git_dir.join("index.lock");
+    let stale = std::fs::metadata(&lock)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.elapsed().ok())
+        .map(|d| d.as_secs() > 60)
+        .unwrap_or(false);
+    stale && std::fs::remove_file(&lock).is_ok()
+}
+
 pub fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
+    run_git_impl(repo, args, false)
+}
+
+fn run_git_impl(repo: &str, args: &[&str], retried: bool) -> Result<String, String> {
+    let lock = repo_git_lock(repo);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let res = run_git_inner(repo, args);
+    if !retried {
+        if let Err(e) = &res {
+            if is_lock_error(e) && remove_stale_index_lock(repo) {
+                drop(_guard);
+                return run_git_impl(repo, args, true);
+            }
+        }
+    }
+    res
+}
+
+fn run_git_inner(repo: &str, args: &[&str]) -> Result<String, String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(repo)
         .args(args)
         .output()
-        .map_err(|e| format!("无法执行 git: {e}"))?;
+        .map_err(|e| format!("无法执行 git： {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
@@ -48,6 +121,25 @@ pub fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
 }
 
 fn git_stdin(repo: &str, args: &[&str], input: &str) -> Result<String, String> {
+    git_stdin_impl(repo, args, input, false)
+}
+
+fn git_stdin_impl(repo: &str, args: &[&str], input: &str, retried: bool) -> Result<String, String> {
+    let lock = repo_git_lock(repo);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let res = git_stdin_inner(repo, args, input);
+    if !retried {
+        if let Err(e) = &res {
+            if is_lock_error(e) && remove_stale_index_lock(repo) {
+                drop(_guard);
+                return git_stdin_impl(repo, args, input, true);
+            }
+        }
+    }
+    res
+}
+
+fn git_stdin_inner(repo: &str, args: &[&str], input: &str) -> Result<String, String> {
     let mut child = Command::new("git")
         .arg("-C")
         .arg(repo)
@@ -56,15 +148,15 @@ fn git_stdin(repo: &str, args: &[&str], input: &str) -> Result<String, String> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("无法执行 git: {e}"))?;
+        .map_err(|e| format!("无法执行 git： {e}"))?;
     use std::io::Write;
     child
         .stdin
         .take()
         .unwrap()
         .write_all(input.as_bytes())
-        .map_err(|e| format!("写入失败: {e}"))?;
-    let out = child.wait_with_output().map_err(|e| format!("等待 git 失败: {e}"))?;
+        .map_err(|e| format!("写入失败： {e}"))?;
+    let out = child.wait_with_output().map_err(|e| format!("等待 git 失败： {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
@@ -134,6 +226,9 @@ pub fn status(repo: &str) -> RepoStatus {
     for line in out.lines() {
         if let Some(rest) = line.strip_prefix("# branch.oid ") {
             st.unborn = rest == "(initial)";
+            if !st.unborn {
+                st.head = Some(rest.to_string());
+            }
             continue;
         }
         if let Some(rest) = line.strip_prefix("# branch.head ") {
@@ -268,7 +363,7 @@ pub fn push(repo: &str) -> Result<String, String> {
     } else if let Some(branch) = st.branch {
         run_git(repo, &["push", "-u", "origin", &branch])
     } else {
-        Err("无法确定推送目标(仓库处于分离 HEAD 或没有分支)".into())
+        Err("无法确定推送目标（仓库处于分离 HEAD 或没有分支）".into())
     }
 }
 
@@ -284,7 +379,7 @@ pub fn diff_for_ai(repo: &str, staged_only: bool) -> Result<String, String> {
     let mut buf = String::new();
     if let Ok(s) = run_git(repo, &["diff", "--cached", "--no-color", "--no-ext-diff", "--stat"]) {
         if !s.trim().is_empty() {
-            buf.push_str("## 已暂存变更(stat)\n");
+            buf.push_str("## 已暂存变更（stat）\n");
             buf.push_str(&s);
             buf.push('\n');
         }
@@ -299,7 +394,7 @@ pub fn diff_for_ai(repo: &str, staged_only: bool) -> Result<String, String> {
     if !staged_only {
         if let Ok(s) = run_git(repo, &["diff", "--no-color", "--no-ext-diff", "--stat"]) {
             if !s.trim().is_empty() {
-                buf.push_str("## 未暂存变更(stat)\n");
+                buf.push_str("## 未暂存变更（stat）\n");
                 buf.push_str(&s);
                 buf.push('\n');
             }
@@ -312,7 +407,7 @@ pub fn diff_for_ai(repo: &str, staged_only: bool) -> Result<String, String> {
             }
         }
         if !st.untracked.is_empty() {
-            buf.push_str("## 未跟踪的新文件(尚未有差异)\n");
+            buf.push_str("## 未跟踪的新文件（尚未有差异）\n");
             for f in &st.untracked {
                 buf.push_str(&format!("- {}\n", f.path));
             }
@@ -329,7 +424,7 @@ pub fn diff_for_ai(repo: &str, staged_only: bool) -> Result<String, String> {
     if buf.len() > MAX_AI_DIFF_BYTES {
         let keep = buf.len() - (buf.len() - MAX_AI_DIFF_BYTES);
         buf = buf[..keep].to_string();
-        buf.push_str("\n...(差异过大已截断)\n");
+        buf.push_str("\n...（差异过大已截断）\n");
     }
     Ok(buf)
 }
@@ -427,13 +522,16 @@ pub fn local_branches(repo: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// 远程跟踪分支列表(排除 origin/HEAD 符号引用)
+/// 远程跟踪分支列表(排除 origin/HEAD 等符号引用)
 pub fn remote_branches(repo: &str) -> Vec<String> {
-    run_git(repo, &["branch", "-r", "--format=%(refname:short)"])
+    // 不用 --format=%(refname:short):它会把符号引用 origin/HEAD 输出成裸 "origin",
+    // 使过滤失效。改用原始输出,跳过含 "->" 的符号引用行(如 origin/HEAD -> origin/main)。
+    run_git(repo, &["branch", "-r"])
         .map(|o| {
             o.lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty() && l != "origin/HEAD")
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty() && !l.contains("->"))
+                .map(|l| l.to_string())
                 .collect()
         })
         .unwrap_or_default()
