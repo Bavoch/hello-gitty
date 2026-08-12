@@ -55,7 +55,7 @@ pub struct PromptPreset {
     pub user_template: String,
 }
 
-const USER_TAIL: &str = "\n\n以下是本次要提交的全部变更：\n\n{diff}\n\n请生成提交信息。";
+const USER_TAIL: &str = "\n\n以下是本次要提交的全部变更（diff）：\n\n{diff}\n\n请严格按系统消息中的格式生成提交信息：必须包含主题行与正文，正文用要点说明变更原因与主要改动，不要只输出一句话。";
 
 pub fn presets() -> Vec<PromptPreset> {
     vec![
@@ -63,29 +63,23 @@ pub fn presets() -> Vec<PromptPreset> {
             id: "conventional".into(),
             name: "常规提交".into(),
             description: "Conventional Commits 规范，主题 + 正文，语言跟随上方设置".into(),
-            system: "你是一名资深软件工程师，负责为代码变更撰写简洁、专业的 git 提交信息。遵循 Conventional Commits 规范（type: subject），主语用祈使句，主题不超过 72 字符，正文说明变更的原因与影响，必要时给出要点列表。只输出提交信息本身,不要任何解释或代码块标记。".into(),
+            system: "你是一名资深软件工程师，严格遵循 Conventional Commits 等社区最佳实践为代码变更撰写 git 提交信息。\n\n\
+【输出格式】主题与正文缺一不可，结构如下：\n\
+<type>(<scope>): <subject>\n\
+（空行）\n\
+<body>\n\n\
+【规则】\n\
+- type 选自：feat 新功能 / fix 修复 / docs 文档 / style 格式 / refactor 重构 / perf 性能 / test 测试 / build 构建 / ci 持续集成 / chore 杂务；无法判断时用 chore\n\
+- scope 可选，表示影响范围（模块或文件）\n\
+- subject：祈使句，概括「做了什么」，不超过 50 字，句末不加句号\n\
+- body：说明「为什么改」与「主要改了什么」，多项改动用「- 」列要点；不要逐行复述 diff；每行不超过 72 字\n\n\
+【示例】\n\
+feat(auth): 支持基于 OAuth 的第三方登录\n\n\
+- 新增 OAuth 回调处理与 token 自动刷新\n\
+- 登录页加入第三方登录入口\n\
+- 抽象统一登录接口，便于后续扩展\n\n\
+只输出提交信息本身，不要用 ``` 代码块包裹，不要任何前言或解释。".into(),
             user_template: format!("{{lang}}\n\n{{log}}{}", USER_TAIL),
-        },
-        PromptPreset {
-            id: "concise".into(),
-            name: "极简一句".into(),
-            description: "只输出一行主题，不超过 72 字符".into(),
-            system: "你是一名资深软件工程师，为代码变更撰写一行式 git 提交信息。用祈使句概括变更，不超过 72 字符，遵循 Conventional Commits 规范（type: subject）。只输出提交信息本身,不要解释或代码块标记。".into(),
-            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更：\n\n{diff}\n\n请只生成一行提交信息。".into(),
-        },
-        PromptPreset {
-            id: "detailed".into(),
-            name: "详尽报告".into(),
-            description: "主题 + 详细正文，覆盖背景、影响范围与注意事项".into(),
-            system: "你是一名资深软件工程师，为代码变更撰写详尽的 git 提交信息。遵循 Conventional Commits 规范：主题后空一行接正文。正文说明变更背景、具体内容、影响范围与注意事项，使用要点列表组织。只输出提交信息本身,不要代码块标记。".into(),
-            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更：\n\n{diff}\n\n请生成提交信息（主题 + 详细正文）。".into(),
-        },
-        PromptPreset {
-            id: "gitmoji".into(),
-            name: "Gitmoji 表情".into(),
-            description: "以表情符号开头（✨ 新功能 / 🐛 修复 / 📝 文档…），中文开发者常用".into(),
-            system: "你是一名资深软件工程师，使用 Gitmoji 规范撰写 git 提交信息：以合适的表情符号开头（如 ✨ 新功能、🐛 修复、📝 文档、♻️ 重构、🚀 性能），后接简短主题，必要时附正文。只输出提交信息本身,不要代码块标记。".into(),
-            user_template: "{lang}\n\n{log}\n\n以下是本次要提交的全部变更：\n\n{diff}\n\n请生成 Gitmoji 风格的提交信息。".into(),
         },
     ]
 }
@@ -172,20 +166,22 @@ pub async fn generate_commit_message(cfg: &AiConfig, repo: &str) -> Result<Strin
     let log_hint = if log.is_empty() {
         String::new()
     } else {
-        format!("仓库近期的提交风格参考：\n{}\n", log.join("\n"))
+        format!("以下是该仓库近期的提交记录，仅供你参考 type 前缀与语言习惯，不要照搬其长度或结构：\n{}\n", log.join("\n"))
     };
     let lang = lang_instruction(&cfg.lang);
 
-    // 选择提示词:自定义优先(模板非空时),否则按预设 id 匹配,兜底常规提交
-    let (system, user) = if cfg.prompt_preset == "custom" && !cfg.custom_prompt.trim().is_empty() {
-        let default_system = preset_by_id("conventional").map(|p| p.system).unwrap_or_default();
-        (default_system, render_template(&cfg.custom_prompt, &diff, &log_hint, &lang))
+    // 固定使用最佳实践预设(常规提交)作为提示词引擎;用户填写的「额外要求」追加到系统提示词
+    let p = preset_by_id("conventional").expect("conventional 预设必然存在");
+    let system = if cfg.custom_prompt.trim().is_empty() {
+        p.system.clone()
     } else {
-        let p = preset_by_id(&cfg.prompt_preset)
-            .or_else(|| preset_by_id("conventional"))
-            .expect("conventional 预设必然存在");
-        (p.system, render_template(&p.user_template, &diff, &log_hint, &lang))
+        format!(
+            "{}\n\n【用户额外要求】请在遵循上述规范的基础上优先满足：\n{}",
+            p.system,
+            cfg.custom_prompt.trim()
+        )
     };
+    let user = render_template(&p.user_template, &diff, &log_hint, &lang);
 
     let msg = chat(cfg, &system, &user).await?;
     if msg.is_empty() {

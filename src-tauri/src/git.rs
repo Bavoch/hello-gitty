@@ -352,6 +352,16 @@ pub fn unstage_file(repo: &str, path: &str) -> Result<(), String> {
     }
 }
 
+// 放弃所有未暂存的工作区修改:把已跟踪文件还原到索引状态
+// 不动未跟踪文件(它们属于"新建",非"修改"),也不影响已暂存内容
+pub fn discard_all_changes(repo: &str) -> Result<(), String> {
+    let st = status(repo);
+    if st.unstaged.is_empty() {
+        return Ok(());
+    }
+    run_git(repo, &["restore", "--", "."]).map(|_| ())
+}
+
 pub fn commit(repo: &str, message: &str) -> Result<String, String> {
     git_stdin(repo, &["commit", "-F", "-"], message)
 }

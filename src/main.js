@@ -4,7 +4,7 @@ const { listen } = window.__TAURI__.event;
 
 const $ = (id) => document.getElementById(id);
 
-const DEFAULT_AI = { base_url: "https://api.deepseek.com", api_key: "", model: "deepseek-v4-flash", lang: "中文", commit_mode: "auto", prompt_preset: "conventional", custom_prompt: "" };
+const DEFAULT_AI = { base_url: "https://api.deepseek.com", api_key: "", model: "deepseek-v4-flash", lang: "中文", commit_mode: "auto", custom_prompt: "" };
 const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" };
 
 const SIDEBAR_MIN = 48, SIDEBAR_MAX = 420; // 侧栏拖拽宽度范围
@@ -16,7 +16,6 @@ let repo = null;
 let busy = false;
 let pendingPush = false; // 推送流程:等待手动填写提交信息后自动继续推送
 let toastTimer = null;
-let promptPresets = [];
 
 init();
 
@@ -70,7 +69,8 @@ function bindEvents() {
   $("btn-init").addEventListener("click", initRepo);
   $("btn-stage-all").addEventListener("click", () => stageAll(true));
   $("btn-unstage-all").addEventListener("click", () => stageAll(false));
-  $("btn-commit").addEventListener("click", onCommit);
+  $("btn-discard-all").addEventListener("click", discardAll);
+  $("btn-commit").addEventListener("click", () => onCommit($("btn-commit")));
   $("btn-push").addEventListener("click", () => pushPull("push"));
   $("btn-pull").addEventListener("click", () => pushPull("pull"));
   $("btn-branch").addEventListener("click", (e) => {
@@ -188,9 +188,11 @@ function bindEvents() {
     $("more-menu").classList.add("hidden");
     $("branch-menu").classList.add("hidden");
   });
+  // 侧栏拖拽排序:按下在各 li,移动/松手由文档统一接收(指针移出原项也能持续追踪)
+  document.addEventListener("pointermove", onRepoDragMove);
+  document.addEventListener("pointerup", onRepoDragUp);
   $("btn-settings-cancel").addEventListener("click", closeSettings);
   $("btn-settings-save").addEventListener("click", saveSettings);
-  $("set-prompt-preset").addEventListener("change", updatePresetPreview);
   // 设置页左侧菜单:切换分组
   document.querySelectorAll(".settings-nav-item").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -213,6 +215,8 @@ function bindEvents() {
   $("btn-merge-manual").addEventListener("click", () => $("dlg-merge-conflict").classList.add("hidden"));
   $("btn-reset-cancel").addEventListener("click", () => $("dlg-reset").classList.add("hidden"));
   $("btn-reset-confirm").addEventListener("click", doReset);
+  $("btn-discard-all-cancel").addEventListener("click", () => $("dlg-discard-all").classList.add("hidden"));
+  $("btn-discard-all-confirm").addEventListener("click", doDiscardAll);
   $("btn-token-cancel").addEventListener("click", () => $("dlg-token").classList.add("hidden"));
   $("btn-token-confirm").addEventListener("click", submitGithubToken);
 
@@ -316,6 +320,76 @@ function repoAvatarColor(path) {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
+let dragPath = null;       // 正在拖拽的项目路径
+let dragState = null;      // pointerdown 待定状态(移动超过阈值前不视为拖拽)
+let suppressClick = false; // 拖拽结束后抑制一次合成 click,避免误切仓库
+
+// 清除所有项目的落点指示线
+function clearDropIndicators() {
+  for (const el of $("repo-list").querySelectorAll(".drop-above,.drop-below")) {
+    el.classList.remove("drop-above", "drop-below");
+  }
+}
+
+// 根据纵坐标定位指针下的项目元素
+function repoItemAtY(y) {
+  for (const it of $("repo-list").querySelectorAll(".repo-item")) {
+    const r = it.getBoundingClientRect();
+    if (y >= r.top && y <= r.bottom) return it;
+  }
+  return null;
+}
+
+// 拖拽移动:超过阈值才进入拖拽,之后实时刷新落点指示(Tauri 默认拦截 HTML5 drop,故改用 pointer)
+function onRepoDragMove(e) {
+  if (!dragState) return;
+  if (!dragPath) {
+    const dx = e.clientX - dragState.x, dy = e.clientY - dragState.y;
+    if (dx * dx + dy * dy < 16) return; // 4px 阈值:与点击区分
+    dragPath = dragState.path;
+    dragState.li.classList.add("dragging");
+  }
+  clearDropIndicators();
+  const target = repoItemAtY(e.clientY);
+  if (target && target !== dragState.li) {
+    const rect = target.getBoundingClientRect();
+    target.classList.add(e.clientY - rect.top < rect.height / 2 ? "drop-above" : "drop-below");
+  }
+}
+
+// 拖拽松手:按落点重排,并复位状态
+function onRepoDragUp(e) {
+  if (dragPath && dragState) {
+    const target = repoItemAtY(e.clientY);
+    if (target && target !== dragState.li) {
+      const rect = target.getBoundingClientRect();
+      reorderRepo(dragPath, target.dataset.path, e.clientY - rect.top < rect.height / 2);
+    }
+    dragState.li.classList.remove("dragging");
+    clearDropIndicators();
+    suppressClick = true;
+    dragPath = null;
+  }
+  dragState = null;
+}
+
+// 拖拽落定:把 src 移到 target 之前(before=true)/之后,就地重排两份列表并持久化
+function reorderRepo(srcPath, targetPath, before) {
+  const srcIdx = repos.findIndex((r) => r.path === srcPath);
+  if (srcIdx < 0) return;
+  const [moved] = repos.splice(srcIdx, 1);
+  let dstIdx = repos.findIndex((r) => r.path === targetPath);
+  if (dstIdx < 0) repos.push(moved);
+  else {
+    if (!before) dstIdx += 1;
+    repos.splice(dstIdx, 0, moved);
+  }
+  // settings.repos 仅存路径,顺序即展示顺序;重排后持久化,下次加载沿用
+  settings.repos = repos.map((r) => r.path);
+  invoke("settings_save", { settings }).catch(() => {});
+  renderRepoList();
+}
+
 function renderRepoList() {
   const ul = $("repo-list");
   ul.innerHTML = "";
@@ -324,6 +398,7 @@ function renderRepoList() {
     const li = document.createElement("li");
     li.className = "repo-item" + (r.path === repo ? " active" : "");
     li.title = r.is_repo ? r.path : r.path + " · 不是 Git 仓库";
+    li.dataset.path = r.path; // 拖拽落点定位用
 
     const ic = document.createElement("span");
     ic.className = "repo-icon-wrap";
@@ -332,6 +407,7 @@ function renderRepoList() {
       img.className = "repo-icon";
       img.src = r.icon;
       img.alt = "";
+      img.draggable = false; // 避免拖到图标时触发图片原生拖拽
       ic.appendChild(img);
     } else {
       // 无真实图标:取项目名首字符做字母头像,配色按路径哈希稳定分配(同项目颜色不变)
@@ -358,7 +434,16 @@ function renderRepoList() {
     info.append(name, meta);
 
     li.append(ic, info);
-    li.addEventListener("click", () => switchRepo(r.path));
+    li.addEventListener("click", () => {
+      if (suppressClick) { suppressClick = false; return; } // 拖拽刚结束:吞掉合成 click
+      switchRepo(r.path);
+    });
+    // pointer 实现拖拽:按下记录起点,移动超阈值才拖(普通点击仍可切换仓库)
+    li.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return; // 仅左键
+      suppressClick = false;
+      dragState = { path: r.path, li, x: e.clientX, y: e.clientY };
+    });
     ul.appendChild(li);
   }
   fitAllPaths(); // 渲染完成后按当前侧栏宽度做路径智能省略
@@ -460,6 +545,7 @@ async function initRepo() {
 async function refresh() {
   if (!repo) return;
   branchCache = null; // 仓库状态已变(切分支/推送/拉取等),分支缓存作废
+  updateProjectHeader(); // 顶部标题栏:当前项目图标 + 名称
   // 一次拉取合并的 status + history(后端复用 status 的 branch 信息,省去重复 git 进程)
   const data = await invoke("git_refresh", { repo });
   const st = data.status, hist = data.history;
@@ -487,6 +573,35 @@ function updateSidebarCurrent(st) {
   // 第二行现在只展示路径,状态徽标已移至右侧面板,此处仅同步是否 Git 仓库
   repos[idx] = { ...repos[idx], is_repo: st.is_repo };
   renderRepoList();
+}
+
+// 顶部标题栏:当前项目图标 + 名称(数据复用侧栏仓库摘要,无需额外请求)
+function updateProjectHeader() {
+  const hdr = $("project-header");
+  const cur = repos.find((r) => r.path === repo);
+  if (!cur) { hdr.classList.add("hidden"); return; }
+  hdr.classList.remove("hidden");
+  const wrap = $("proj-icon-wrap");
+  wrap.innerHTML = "";
+  if (cur.icon) {
+    const img = document.createElement("img");
+    img.className = "proj-icon";
+    img.src = cur.icon;
+    img.alt = "";
+    wrap.appendChild(img);
+  } else {
+    // 无真实图标:取项目名首字符做字母头像,配色与侧栏一致(同项目颜色不变)
+    const c = repoAvatarColor(cur.path);
+    const av = document.createElement("span");
+    av.className = "proj-avatar";
+    av.style.background = c.bg;
+    av.style.color = c.fg;
+    av.textContent = ((cur.name || cur.path).trim().charAt(0) || "?").toUpperCase();
+    wrap.appendChild(av);
+  }
+  $("proj-name").textContent = cur.name || cur.path;
+  $("proj-path").textContent = cur.path;
+  $("proj-path").title = cur.path;
 }
 
 /* ===== 历史(本地/远程并排) ===== */
@@ -659,6 +774,8 @@ async function doReset() {
 }
 
 function showEmpty(showInit) {
+  // 无项目时隐藏标题栏;当前选中项不是 Git 仓库时仍保留(项目已选定)
+  $("project-header").classList.toggle("hidden", !repo);
   $("panel").classList.add("hidden");
   $("refreshing-state").classList.add("hidden");
   $("empty-state").classList.remove("hidden");
@@ -679,8 +796,15 @@ function showEmpty(showInit) {
   }
   $("branch-name").textContent = "—";
   $("branch-name").title = "";
+  if ($("commit-count")) $("commit-count").classList.add("hidden");
   if ($("push-count")) $("push-count").classList.add("hidden");
   if ($("pull-count")) $("pull-count").classList.add("hidden");
+}
+
+// 设置分组展开/收起(open=true 展开):同步 .collapsed 与目标列表显隐
+function setSectionOpen(secId, targetId, open) {
+  $(secId).classList.toggle("collapsed", !open);
+  $(targetId).classList.toggle("hidden", !open);
 }
 
 function showPanel(st) {
@@ -694,12 +818,20 @@ function showPanel(st) {
 
   $("sec-conflicts").classList.toggle("hidden", st.conflicts.length === 0);
   $("btn-ai-resolve").disabled = st.conflicts.length === 0;
+  // 分组默认展开/收起:历史始终收起;暂存/更改按是否有内容决定
+  setSectionOpen("sec-staged", "staged-list", st.staged.length > 0);
+  setSectionOpen("sec-unstaged", "unstaged-list", st.unstaged.length + st.untracked.length > 0);
+  setSectionOpen("sec-history", "history-container", false);
   // 右侧面板显示当前分支
   $("branch-name").textContent = st.detached ? "（分离）" : (st.branch || "（无分支）");
   $("branch-name").title = st.branch || "";
   // 领先/落后提交数徽标:推送按钮显示 ahead,拉取按钮显示 behind
   // (空值保护:HTML 与 JS 版本错位时不能中断整个刷新)
-  const pc = $("push-count"), lc = $("pull-count");
+  const cc = $("commit-count"), pc = $("push-count"), lc = $("pull-count");
+  if (cc) {
+    cc.classList.toggle("hidden", !(st.staged.length > 0));
+    if (st.staged.length > 0) cc.textContent = st.staged.length;
+  }
   if (pc) {
     pc.classList.toggle("hidden", !(st.ahead > 0));
     if (st.ahead > 0) pc.textContent = st.ahead;
@@ -840,6 +972,24 @@ async function stageAll(stage) {
   await refresh();
 }
 
+function discardAll() {
+  $("dlg-discard-all").classList.remove("hidden");
+}
+
+async function doDiscardAll() {
+  const btn = $("btn-discard-all");
+  $("dlg-discard-all").classList.add("hidden");
+  setButtonLoading(btn, true, "");
+  try {
+    await invoke("git_discard_all", { repo });
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading(btn, false);
+  }
+  await refresh();
+}
+
 async function toggleStage(path, unstage) {
   // 单文件暂存/取消暂存很快,不显示加载提示,静默执行
   try {
@@ -851,7 +1001,8 @@ async function toggleStage(path, unstage) {
   await refresh();
 }
 
-async function onCommit() {
+async function onCommit(btn) {
+  btn = btn || $("btn-commit");
   // 提交只针对已暂存内容,不再自动暂存全部
   const st = await invoke("git_status", { repo });
   if (st.staged.length === 0) {
@@ -862,7 +1013,7 @@ async function onCommit() {
   }
 
   let msg = "";
-  setButtonLoading($("btn-commit"), true, "提交中…");
+  setButtonLoading(btn, true, "提交中…");
   try {
     msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
     // 直接提交模式:AI 生成后立即提交
@@ -878,7 +1029,7 @@ async function onCommit() {
     // AI 失败(如未配 Key):回退到手动填写确认,保证提交可用
     showCommitDialog("", "AI 生成失败：" + e + " 请手动填写：");
   } finally {
-    setButtonLoading($("btn-commit"), false);
+    setButtonLoading(btn, false);
   }
 }
 
@@ -1162,48 +1313,7 @@ async function openSettings() {
   $("set-commit-mode").value = settings.ai.commit_mode || "auto";
   $("set-custom-prompt").value = settings.ai.custom_prompt || "";
 
-  // 加载内置提示词预设
-  try { promptPresets = await invoke("ai_presets"); } catch (_) { promptPresets = []; }
-  const sel = $("set-prompt-preset");
-  sel.innerHTML = "";
-  for (const p of promptPresets) {
-    const opt = document.createElement("option");
-    opt.value = p.id;
-    opt.textContent = p.name;
-    sel.appendChild(opt);
-  }
-  const customOpt = document.createElement("option");
-  customOpt.value = "custom";
-  customOpt.textContent = "自定义…";
-  sel.appendChild(customOpt);
-  sel.value = settings.ai.prompt_preset || "conventional";
-
-  updatePresetPreview();
   $("dlg-settings").classList.remove("hidden");
-}
-
-function updatePresetPreview() {
-  const id = $("set-prompt-preset").value;
-  $("custom-prompt-field").classList.toggle("hidden", id !== "custom");
-  const box = $("preset-preview");
-  if (id === "custom") {
-    box.classList.add("hidden");
-    return;
-  }
-  const p = promptPresets.find((x) => x.id === id);
-  if (!p) { box.classList.add("hidden"); return; }
-  box.classList.remove("hidden");
-  box.innerHTML =
-    `<div class="pp-title">${escapeHtml(p.name)}</div>` +
-    `<div class="pp-desc">${escapeHtml(p.description)}</div>` +
-    `<div class="pp-label">系统提示词（system）</div>` +
-    `<pre>${escapeHtml(p.system)}</pre>` +
-    `<div class="pp-label">用户提示词模板（user，占位符会被替换）</div>` +
-    `<pre>${escapeHtml(p.user_template)}</pre>`;
-}
-
-function escapeHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function closeSettings() { $("dlg-settings").classList.add("hidden"); }
@@ -1215,7 +1325,6 @@ async function saveSettings() {
     model: $("set-model").value.trim() || DEFAULT_AI.model,
     lang: $("set-lang").value,
     commit_mode: $("set-commit-mode").value,
-    prompt_preset: $("set-prompt-preset").value,
     custom_prompt: $("set-custom-prompt").value,
   };
   try {
