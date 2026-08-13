@@ -1146,6 +1146,7 @@ function renderList(listId, entries, kind, countEl) {
   const ul = $(listId);
   ul.innerHTML = "";
   countEl.textContent = entries.length;
+  countEl.classList.toggle("badge", entries.length > 0); // 有改动时用蓝色胶囊标签,为 0 回落简洁灰数字
   for (const e of entries) {
     const li = document.createElement("li");
     li.className = "file-row" + (kind === "conflict" ? " conflict" : "");
@@ -1163,6 +1164,16 @@ function renderList(listId, entries, kind, countEl) {
     path.textContent = e.orig_path ? `${e.path} → ${e.orig_path}` : e.path;
     path.title = e.path;
     li.appendChild(path);
+
+    // 增删行数(仅暂存/更改;无变动不显示),增=绿、删=红
+    if (kind !== "conflict" && (e.added > 0 || e.deleted > 0)) {
+      const stat = document.createElement("span");
+      stat.className = "lines";
+      const a = document.createElement("span"); a.className = "add"; a.textContent = "+" + e.added;
+      const d = document.createElement("span"); d.className = "del"; d.textContent = "-" + e.deleted;
+      stat.append(a, d);
+      li.appendChild(stat);
+    }
 
     const actions = document.createElement("span");
     actions.className = "row-actions";

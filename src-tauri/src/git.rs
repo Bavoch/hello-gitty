@@ -14,6 +14,8 @@ pub struct FileEntry {
     pub staged: bool,
     pub untracked: bool,
     pub conflict: bool,
+    pub added: i32,   // 相对参照的新增行数(暂存↔HEAD / 更改↔index / 未跟踪=文件行数)
+    pub deleted: i32, // 相对参照的删除行数
 }
 
 impl FileEntry {}
@@ -355,7 +357,51 @@ pub fn status(repo: &str) -> RepoStatus {
             continue;
         }
     }
+    // 增删行数:暂存取 index↔HEAD,更改(已跟踪)取 worktree↔index
+    fill_numstat(repo, true, &mut st.staged);
+    fill_numstat(repo, false, &mut st.unstaged);
+    // 未跟踪文件:整文件视为新增(行数=文件行数;过大或二进制则留 0)
+    for e in &mut st.untracked {
+        let p = std::path::Path::new(repo).join(&e.path);
+        if std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false) {
+            if let Ok(s) = std::fs::read_to_string(&p) {
+                e.added = s.lines().count() as i32;
+            }
+        }
+    }
     st
+}
+
+/// 用 git diff --numstat 填充每个文件相对参照的增删行数。
+/// cached=true 取暂存区↔HEAD(对应暂存列表),false 取工作区↔暂存区(对应更改列表)。
+fn fill_numstat(repo: &str, cached: bool, entries: &mut [FileEntry]) {
+    if entries.is_empty() {
+        return;
+    }
+    let out = match if cached {
+        run_git(repo, &["diff", "--numstat", "--cached"])
+    } else {
+        run_git(repo, &["diff", "--numstat"])
+    } {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+    // numstat: "<added>\t<deleted>\t<path>",二进制文件为 "-\t-\t<path>"
+    let mut map: HashMap<String, (i32, i32)> = HashMap::new();
+    for line in out.lines() {
+        let mut t = line.splitn(3, '\t');
+        let a = t.next().unwrap_or("");
+        let d = t.next().unwrap_or("");
+        let p = t.next().unwrap_or("");
+        let to_n = |s: &str| if s == "-" { 0 } else { s.parse().unwrap_or(0) };
+        map.insert(unquote(p), (to_n(a), to_n(d)));
+    }
+    for e in entries.iter_mut() {
+        if let Some(&(a, d)) = map.get(&e.path) {
+            e.added = a;
+            e.deleted = d;
+        }
+    }
 }
 
 pub fn stage_all(repo: &str) -> Result<(), String> {

@@ -333,12 +333,18 @@ body.resizing { cursor: col-resize; user-select: none; }
   transition: transform .12s ease;
 }
 .section.collapsed .caret { transform: rotate(-90deg); }
-.count { color: var(--text-dim); font-size: 12px; letter-spacing: 0; }
-.count::before { content: "("; }
-.count::after { content: ")"; }
-/* 暂存/更改分组标题文字配色(暂存=蓝,更改=橙),替代原有字母徽标 */
-#staged-title { color: var(--blue); }
-#unstaged-title { color: var(--orange); }
+/* 分组计数:默认简洁灰数字(版本计数,以及暂存/更改为 0 时);
+   有改动时追加 .badge 变为蓝色胶囊标签,配色与推送按钮角标(.btn-count.push)一致 */
+.count {
+  color: var(--text-dim); font-size: 12px; font-weight: 400;
+  line-height: 1; letter-spacing: 0;
+}
+.count.badge {
+  background: var(--blue); color: #1e1e1e;
+  font-size: 10px; font-weight: 700; line-height: 14px;
+  min-width: 16px; padding: 0 5px;
+  border-radius: 8px; text-align: center;
+}
 .section-actions { display: none; padding: 4px 12px 6px; background: var(--panel); }
 .section.has-conflicts .section-actions { display: block; }
 .mini-btn {
@@ -388,6 +394,11 @@ body.resizing { cursor: col-resize; user-select: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .file-row .orig { color: var(--text-dim); }
+/* 增删行数:右对齐,增=绿、删=红;悬停出现操作按钮时隐藏,避免与按钮重叠 */
+.file-row .lines { flex: none; display: inline-flex; gap: 6px; font-family: var(--mono); font-size: 11px; }
+.file-row .lines .add { color: var(--green); }
+.file-row .lines .del { color: var(--red); }
+.file-row:hover .lines { visibility: hidden; }
 /* 悬停操作按钮:绝对定位覆盖在行右侧(不挤动路径文字),主题色 */
 .row-actions {
   position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
