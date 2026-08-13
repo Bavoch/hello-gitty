@@ -495,6 +495,13 @@ fn git_unstage_file(repo: String, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn git_discard_all(repo: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git::discard_all_changes(&repo))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn git_commit(repo: String, message: String) -> OpResult {
     op(tauri::async_runtime::spawn_blocking(move || git::commit(&repo, &message)).await.unwrap_or_else(|e| Err(e.to_string())))
 }
@@ -719,6 +726,20 @@ async fn ai_commit_message(settings: AiConfig, repo: String) -> Result<String, S
     ai::generate_commit_message(&settings, &repo).await
 }
 
+/// 流式生成提交信息:每收到一段就经 commit-stream 事件推送当前累积全文,返回最终全文
+#[tauri::command]
+async fn ai_commit_message_stream(
+    app: tauri::AppHandle,
+    settings: AiConfig,
+    repo: String,
+) -> Result<String, String> {
+    let handle = app.clone();
+    ai::generate_commit_message_stream(&settings, &repo, move |text| {
+        let _ = handle.emit("commit-stream", serde_json::json!({ "text": text }));
+    })
+    .await
+}
+
 #[tauri::command]
 fn ai_presets() -> Vec<ai::PromptPreset> {
     ai::presets()
@@ -776,6 +797,7 @@ pub fn run() {
             git_unstage_all,
             git_stage_file,
             git_unstage_file,
+            git_discard_all,
             git_commit,
             git_push,
             git_push_with_token,
@@ -789,6 +811,7 @@ pub fn run() {
             git_branches,
             git_checkout,
             ai_commit_message,
+            ai_commit_message_stream,
             ai_presets,
             ai_resolve_file,
             ai_resolve_conflicts,

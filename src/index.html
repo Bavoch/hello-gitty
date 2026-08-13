@@ -55,7 +55,14 @@
     </aside>
 
     <div id="content">
-      <section id="toolbar">
+      <div id="project-header">
+        <div class="proj-identity">
+          <span class="proj-icon-wrap" id="proj-icon-wrap"></span>
+          <div class="proj-text">
+            <span class="proj-name" id="proj-name">—</span>
+            <span class="proj-path" id="proj-path"></span>
+          </div>
+        </div>
         <div class="branch-wrap">
           <button id="btn-branch" class="tool-btn branch-chip" title="切换分支">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
@@ -64,15 +71,30 @@
           </button>
           <div id="branch-menu" class="branch-menu hidden"></div>
         </div>
-        <button id="btn-commit" class="tool-btn">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          提交
-        </button>
-        <button id="btn-push" class="tool-btn">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
-          推送
-          <span id="push-count" class="btn-count push hidden" title="本地领先的提交数"></span>
-        </button>
+      </div>
+      <section id="toolbar">
+        <div class="ship-wrap">
+          <button id="btn-ship" class="tool-btn" title="提交" disabled>
+            <span id="ship-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span id="ship-label">提交</span>
+            <span id="ship-count" class="btn-count hidden"></span>
+          </button>
+          <!-- 提交信息流式就地弹窗 -->
+          <div id="commit-pop" class="commit-pop hidden">
+            <div class="commit-pop-head">
+              <span id="commit-pop-title">AI 正在生成提交信息…</span>
+              <span class="spinner commit-pop-spin" id="commit-pop-spin"></span>
+              <button class="commit-pop-x" id="commit-pop-close" title="取消">×</button>
+            </div>
+            <textarea id="commit-stream-text" class="commit-stream-text" rows="6" disabled placeholder="提交信息…"></textarea>
+            <div class="commit-pop-actions hidden" id="commit-pop-actions">
+              <button class="tool-btn" id="commit-pop-regen">重新生成</button>
+              <span class="spacer"></span>
+              <button class="tool-btn" id="commit-pop-cancel">取消</button>
+              <button class="tool-btn primary" id="commit-pop-ok">提交</button>
+            </div>
+          </div>
+        </div>
         <button id="btn-pull" class="tool-btn">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
           拉取
@@ -137,7 +159,6 @@
             <div class="section-head-row">
               <button class="section-head" data-target="staged-list">
                 <span class="caret"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-                <span class="ch-badge ch-a">A</span>
                 <span id="staged-title">暂存</span>
                 <span class="count" id="staged-count">0</span>
               </button>
@@ -150,10 +171,10 @@
             <div class="section-head-row">
               <button class="section-head" data-target="unstaged-list">
                 <span class="caret"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-                <span class="ch-badge ch-m">M</span>
                 <span id="unstaged-title">更改</span>
                 <span class="count" id="unstaged-count">0</span>
               </button>
+              <button class="icon-btn sec-act" id="btn-discard-all" title="取消所有修改"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button>
               <button class="icon-btn sec-act" id="btn-stage-all" title="全部暂存"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
             </div>
             <ul class="file-list" id="unstaged-list"></ul>
@@ -163,7 +184,6 @@
             <div class="section-head-row">
               <button class="section-head" data-target="history-container">
                 <span class="caret"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-                <span class="badge badge-h">H</span>
                 <span>历史</span>
                 <span class="count" id="history-count">0</span>
               </button>
@@ -213,6 +233,19 @@
         <button class="tool-btn" id="btn-reset-cancel">取消</button>
         <span class="spacer"></span>
         <button class="tool-btn danger" id="btn-reset-confirm">强制回退</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 取消所有修改确认 -->
+  <div class="overlay hidden" id="dlg-discard-all">
+    <div class="dialog">
+      <h3>取消所有修改</h3>
+      <p class="dlg-hint warn">将丢弃所有未暂存与已暂存的改动，工作区恢复到上次提交的状态，此操作不可恢复。</p>
+      <div class="dlg-actions">
+        <button class="tool-btn" id="btn-discard-all-cancel">取消</button>
+        <span class="spacer"></span>
+        <button class="tool-btn danger" id="btn-discard-all-confirm">确认取消所有修改</button>
       </div>
     </div>
   </div>
@@ -285,13 +318,8 @@
               </select>
             </label>
             <label class="field">
-              <span>提交信息提示词</span>
-              <select id="set-prompt-preset"></select>
-            </label>
-            <div id="preset-preview" class="preset-preview hidden"></div>
-            <label class="field hidden" id="custom-prompt-field">
-              <span>自定义提示词</span>
-              <textarea id="set-custom-prompt" rows="7" placeholder="在这里编写你自己的提示词模板…"></textarea>
+              <span>额外要求（可选）</span>
+              <textarea id="set-custom-prompt" rows="4" placeholder="补充你对提交信息的偏好，例如：正文不超过 3 条；关联工单号；侧重说明性能影响…"></textarea>
             </label>
           </div>
         </div>
@@ -361,7 +389,6 @@
     </div>
   </div>
   <div id="toast"></div>
-  <div id="commit-tip" class="commit-tip hidden"></div>
 
   <script src="main.js?v=20260814"></script>
 </body>
