@@ -18,7 +18,7 @@ let fetching = false; // 后台 fetch 防重入:定时器与手动刷新共用
 const sectionUserSet = new Set(); // 用户手动切换过的分组:自动收起规则不再覆盖其状态
 let toastTimer = null;
 let lastShipStatus = null; // 最近一次仓库状态,供按钮在 loading 结束后重建
-let lastStatus = null; // 最近一次仓库状态,供侧栏当前项目显示修改情况
+let lastStatus = null; // 当前仓库最新修改计数(暂存/更改/冲突),供侧栏状态行显示
 let popState = "idle";     // 提交弹窗态:streaming(生成中) / ready(可编辑确认) / idle(关闭)
 let streamCancelled = false; // 软取消:流式中忽略后续事件、不自动提交
 let streamBusy = false;    // 流式 invoke 进行中(含已软取消但后端未返回),用于阻塞重复触发
@@ -441,12 +441,15 @@ function renderRepoList() {
     info.appendChild(name);
     const meta = document.createElement("div");
     meta.className = "repo-meta";
-    const showStatus = r.path === repo && lastStatus && lastStatus.is_repo;
-    if (showStatus) {
-      // 当前项目:第二行显示本地修改情况(暂存/更改计数或已全部提交)
-      meta.textContent = repoStatusText(lastStatus);
+    if (r.is_repo) {
+      // 所有 Git 项目:第二行显示本地修改情况(暂存/更改计数或已全部提交)
+      // 当前项目用最新刷新计数,其他项目用扫描摘要计数(后端已合并未跟踪)
+      const c = r.path === repo && lastStatus
+        ? lastStatus
+        : { staged: r.staged, changed: r.unstaged, conflicts: r.conflicts };
+      meta.textContent = repoStatusText(c);
     } else {
-      // 其他项目:第二行展示项目路径;过长时按可用宽度智能省略(见 fitPath)
+      // 非 Git 项目:第二行展示项目路径;过长时按可用宽度智能省略(见 fitPath)
       meta.dataset.path = r.path;
       meta.textContent = r.path;
     }
@@ -603,19 +606,23 @@ function showRefreshing() {
 
 // 用已拿到的状态就地更新侧栏当前仓库项(零额外 git 调用)
 function updateSidebarCurrent(st) {
-  lastStatus = st;
+  lastStatus = {
+    staged: st.staged.length,
+    changed: st.unstaged.length + st.untracked.length,
+    conflicts: st.conflicts.length,
+  };
   const idx = repos.findIndex((r) => r.path === repo);
   if (idx < 0) return;
   repos[idx] = { ...repos[idx], is_repo: st.is_repo };
   renderRepoList();
 }
 
-// 侧栏当前项目第二行:本地修改情况(暂存:N，更改:N;干净时显示已全部提交)
-function repoStatusText(st) {
-  const staged = st.staged.length;
-  const changed = st.unstaged.length + st.untracked.length;
-  if (staged === 0 && changed === 0) return "已全部提交";
-  return "暂存：" + staged + "，更改：" + changed;
+// 侧栏项目第二行:本地修改情况(暂存:N，更改:N;全部干净时显示已全部提交)
+function repoStatusText(c) {
+  if (c.staged === 0 && c.changed === 0 && c.conflicts === 0) return "已全部提交";
+  let t = "暂存：" + c.staged + "，更改：" + c.changed;
+  if (c.conflicts > 0) t += "，冲突：" + c.conflicts;
+  return t;
 }
 
 // 顶部标题栏:当前项目图标 + 名称(数据复用侧栏仓库摘要,无需额外请求)
