@@ -15,6 +15,7 @@ let repos = []; // 侧栏仓库摘要列表
 let repo = null;
 let busy = false;
 let pendingPush = false; // 推送流程:等待手动填写提交信息后自动继续推送
+let fetching = false; // 后台 fetch 防重入:定时器与手动刷新共用
 let toastTimer = null;
 let promptPresets = [];
 
@@ -51,9 +52,12 @@ async function init() {
   await loadRepos();
   if (repo) {
     await refresh();
+    fetchRemote(); // 启动时后台核对一次远程状态
   } else {
     showEmpty(false);
   }
+  // 定时后台 fetch:远程有新提交时,ahead/behind 徽标与远程历史自动更新
+  setInterval(fetchRemote, 60_000);
 }
 
 function bindEvents() {
@@ -137,6 +141,7 @@ function bindEvents() {
     // 手动刷新:全量重扫所有仓库状态 + 刷新当前面板
     setButtonLoading($("btn-more"), true, "刷新中…");
     try {
+      fetchRemote(); // 手动刷新:同时后台核对远程状态
       await loadRepos();
       await refresh();
     } finally {
@@ -246,6 +251,7 @@ async function addRepoByPath(dir) {
   try { await invoke("repos_set_current", { path: dir }); } catch (_) {}
   await loadRepos();
   await refresh();
+  fetchRemote(); // 新添加的项目后台核对一次远程状态
 }
 
 // 拖拽文件夹到窗口添加项目
@@ -285,6 +291,7 @@ async function doClone() {
     await loadRepos();
     await refresh();
     toast("克隆成功", true);
+    fetchRemote(); // 克隆后核对远程跟踪分支,徽标立即可用
   } catch (e) { toast(String(e), false); }
   finally { setButtonLoading($("btn-clone-confirm"), false); }
 }
@@ -428,6 +435,7 @@ async function switchRepo(path) {
   renderRepoList();
   showRefreshing();
   await refresh();
+  fetchRemote(); // 切到新仓库后台核对远程状态
 }
 
 async function removeRepo(path) {
@@ -457,6 +465,20 @@ async function initRepo() {
 }
 
 /* ===== 刷新 ===== */
+// 后台静默 fetch:更新本地远程跟踪分支,让 push/pull 徽标与远程历史反映最新状态。
+// 失败静默(无远程/无网络/未配置凭据),不打断用户操作;完成后就地刷新当前仓库。
+async function fetchRemote() {
+  if (!repo || fetching) return;
+  fetching = true;
+  const target = repo;
+  try {
+    const r = await invoke("git_fetch", { repo });
+    if (r && r.ok === false) return; // 无远程/无网络/认证失败等:静默忽略
+    if (repo === target) await refresh(); // fetch 后重读状态,更新 ahead/behind 徽标
+  } catch (_) { /* 静默 */ }
+  finally { fetching = false; }
+}
+
 async function refresh() {
   if (!repo) return;
   branchCache = null; // 仓库状态已变(切分支/推送/拉取等),分支缓存作废

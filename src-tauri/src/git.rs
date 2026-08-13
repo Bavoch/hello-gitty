@@ -371,6 +371,12 @@ pub fn pull(repo: &str) -> Result<String, String> {
     run_git(repo, &["pull"])
 }
 
+/// 静默更新远程跟踪分支(refs/remotes/...),不修改工作区。
+/// 供前端后台 fetch:拉取最新远程状态后,ahead/behind 徽标与远程历史才有意义。
+pub fn fetch(repo: &str) -> Result<String, String> {
+    run_git(repo, &["fetch"])
+}
+
 /// 供 AI 生成提交信息用的差异文本。
 /// staged_only = true 时只采集已暂存差异(提交语义:只提交已暂存内容,信息须与实际提交一致);
 /// false 时采集暂存 + 未暂存 + 未跟踪文件清单。

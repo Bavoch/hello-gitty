@@ -692,6 +692,13 @@ async fn git_pull(repo: String) -> OpResult {
     op(tauri::async_runtime::spawn_blocking(move || git::pull(&repo)).await.unwrap_or_else(|e| Err(e.to_string())))
 }
 
+/// 后台静默 fetch:更新远程跟踪分支;失败(无远程/无网络/未认证)返回 ok:false,
+/// 由前端静默忽略,不打扰用户。
+#[tauri::command]
+async fn git_fetch(repo: String) -> OpResult {
+    op(tauri::async_runtime::spawn_blocking(move || git::fetch(&repo)).await.unwrap_or_else(|e| Err(e.to_string())))
+}
+
 /// AI 解决冲突后调用:若处于合并中则自动完成合并提交
 #[derive(Serialize)]
 struct MergeResult {
@@ -774,6 +781,7 @@ pub fn run() {
             git_push_with_token,
             open_auth_page,
             git_pull,
+            git_fetch,
             git_finish_merge,
             git_history,
             git_refresh,
