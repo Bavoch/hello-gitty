@@ -105,6 +105,10 @@
           拉取
           <span id="pull-count" class="btn-count pull hidden" title="远程领先的提交数"></span>
         </button>
+        <button id="btn-checkpoint" class="tool-btn" title="创建存档点（保存当前工作区完整状态，AI 改坏了一键读档）">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          存档点
+        </button>
         <span class="busy-ind hidden" id="sb-busy">
           <span class="spinner"></span><span id="sb-busy-text">处理中…</span>
         </span>
@@ -223,6 +227,19 @@
         <button class="tool-btn" id="btn-reset-cancel">取消</button>
         <span class="spacer"></span>
         <button class="tool-btn danger" id="btn-reset-confirm">强制回退</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 读档到存档点确认 -->
+  <div class="overlay hidden" id="dlg-restore">
+    <div class="dialog">
+      <h3>读档到存档点</h3>
+      <p class="dlg-hint warn">将回到此存档点的完整状态（HEAD 与工作区），丢弃之后的所有提交与未保存改动，此操作不可恢复。</p>
+      <div class="dlg-actions">
+        <button class="tool-btn" id="btn-restore-cancel">取消</button>
+        <span class="spacer"></span>
+        <button class="tool-btn danger" id="btn-restore-confirm">确认读档</button>
       </div>
     </div>
   </div>

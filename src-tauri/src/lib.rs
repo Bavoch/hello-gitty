@@ -1,4 +1,5 @@
 mod ai;
+mod checkpoint;
 mod config;
 mod git;
 
@@ -383,6 +384,7 @@ async fn git_history(repo: String) -> History {
 struct RefreshResult {
     status: git::RepoStatus,
     history: History,
+    checkpoints: Vec<checkpoint::Checkpoint>,
 }
 
 /// 合并 status + history 的单次刷新命令:1 次 status 即拿到 branch/upstream/ahead/behind/head,
@@ -395,7 +397,7 @@ async fn git_refresh(repo: String) -> RefreshResult {
     let st = spawn_blocking(move || git::status(&r0)).await.unwrap_or_default();
 
     if !st.is_repo {
-        return RefreshResult { status: st, history: History::default() };
+        return RefreshResult { status: st, history: History::default(), checkpoints: Vec::new() };
     }
 
     let head = st.head.clone();
@@ -423,9 +425,14 @@ async fn git_refresh(repo: String) -> RefreshResult {
         }
     };
 
+    // 存档点列表随刷新一并返回(读一个小 json + 一次 rev-parse;容错,失败返回空)
+    let r5 = repo.clone();
+    let checkpoints = spawn_blocking(move || checkpoint::list(&r5)).await.unwrap_or_default();
+
     RefreshResult {
         status: st,
         history: History { head, commits, remote },
+        checkpoints,
     }
 }
 
@@ -436,6 +443,30 @@ async fn git_reset_hard(repo: String, hash: String) -> OpResult {
             .await
             .unwrap_or_else(|e| Err(e.to_string())),
     )
+}
+
+/// 创建存档点(label 可为 null)
+#[tauri::command]
+async fn checkpoint_create(repo: String, label: Option<String>) -> Result<checkpoint::Checkpoint, String> {
+    tauri::async_runtime::spawn_blocking(move || checkpoint::create(&repo, label))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 读档:回到指定存档点的完整状态
+#[tauri::command]
+async fn checkpoint_restore(repo: String, id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || checkpoint::restore(&repo, &id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 删除存档点(仅移除标记)
+#[tauri::command]
+async fn checkpoint_delete(repo: String, id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || checkpoint::delete(&repo, &id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize)]
@@ -819,6 +850,9 @@ pub fn run() {
             git_reset_hard,
             git_branches,
             git_checkout,
+            checkpoint_create,
+            checkpoint_restore,
+            checkpoint_delete,
             ai_commit_message,
             ai_commit_message_stream,
             ai_presets,

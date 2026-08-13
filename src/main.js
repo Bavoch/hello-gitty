@@ -91,6 +91,7 @@ function bindEvents() {
   $("commit-pop-regen").addEventListener("click", () => streamCommitMessage());
   $("commit-pop-ok").addEventListener("click", () => commitWithMessage($("commit-stream-text").value));
   $("btn-pull").addEventListener("click", doPull);
+  $("btn-checkpoint").addEventListener("click", createCheckpoint);
   $("btn-branch").addEventListener("click", (e) => {
     e.stopPropagation();
     const menu = $("branch-menu");
@@ -228,6 +229,8 @@ function bindEvents() {
   $("btn-merge-manual").addEventListener("click", () => $("dlg-merge-conflict").classList.add("hidden"));
   $("btn-reset-cancel").addEventListener("click", () => $("dlg-reset").classList.add("hidden"));
   $("btn-reset-confirm").addEventListener("click", doReset);
+  $("btn-restore-cancel").addEventListener("click", () => $("dlg-restore").classList.add("hidden"));
+  $("btn-restore-confirm").addEventListener("click", doRestore);
   $("btn-discard-all-cancel").addEventListener("click", () => $("dlg-discard-all").classList.add("hidden"));
   $("btn-discard-all-confirm").addEventListener("click", doDiscardAll);
   $("btn-token-cancel").addEventListener("click", () => $("dlg-token").classList.add("hidden"));
@@ -593,7 +596,7 @@ async function refresh() {
     return;
   }
   showPanel(st);
-  renderHistory(hist, st.branch);
+  renderHistory(hist, st.branch, data.checkpoints);
   updateSidebarCurrent(st); // 侧栏只就地更新当前项,不做全量扫描
 }
 
@@ -655,13 +658,19 @@ function updateProjectHeader() {
 }
 
 /* ===== 历史(本地/远程并排) ===== */
-function renderHistory(h, branch) {
+function renderHistory(h, branch, checkpoints) {
   const box = $("history-container");
   box.innerHTML = "";
   // 本地 + 远程按 hash 去重合并,按时间倒序(VS Code 风格单列时间线)
   const remote = h.remote ? h.remote.commits : [];
-  const all = mergeCommits(h.commits, remote);
-  $("history-count").textContent = all.length;
+  const commits = mergeCommits(h.commits, remote);
+  // 存档点与提交按时间混排,让用户直观看到存档点落在历史的哪个位置
+  const all = [
+    ...commits.map((c) => ({ kind: "commit", c })),
+    ...(checkpoints || []).map((cp) => ({ kind: "checkpoint", cp })),
+  ].sort((a, b) => tsOf(b) - tsOf(a));
+  // 计数只算提交(存档点不是版本)
+  $("history-count").textContent = commits.length;
   if (!all.length) {
     const none = document.createElement("div");
     none.className = "history-none";
@@ -671,8 +680,15 @@ function renderHistory(h, branch) {
   }
   const ul = document.createElement("ul");
   ul.className = "history-list";
-  for (const c of all) ul.appendChild(commitRow(c, h.head));
+  for (const item of all) {
+    ul.appendChild(item.kind === "checkpoint" ? checkpointRow(item.cp) : commitRow(item.c, h.head));
+  }
   box.appendChild(ul);
+}
+
+// 混排条目的时间戳(commit 或 checkpoint)
+function tsOf(item) {
+  return item.kind === "checkpoint" ? item.cp.timestamp : item.c.timestamp;
 }
 
 // 单个提交行:圆点 + hash + message + 作者·时间 + 回退
@@ -820,6 +836,119 @@ async function doReset() {
   resetHash = null;
   await refresh();
   if (ok) toast("已强制回退", true);
+}
+
+/* ===== 存档点(Checkpoint) ===== */
+// 存档点条目:复用 .commit-row 外壳,用旗帜图标 + 「存档点」标签区分,
+// 按时间穿插进版本时间线。hover 显示「删除」「读档」操作。
+function checkpointRow(cp) {
+  const li = document.createElement("li");
+  li.className = "commit-row checkpoint-row";
+  const main = document.createElement("div");
+  main.className = "commit-main";
+
+  // 旗帜图标(占 commit-caret 的列宽,文字列与提交行对齐)
+  const flag = document.createElement("span");
+  flag.className = "cp-flag";
+  flag.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>';
+  main.appendChild(flag);
+
+  // 占位对齐 commit-loci 的 30px 列宽
+  const loci = document.createElement("span");
+  loci.className = "commit-loci";
+  main.appendChild(loci);
+
+  const tag = document.createElement("span");
+  tag.className = "cp-tag";
+  tag.textContent = "存档点";
+  main.appendChild(tag);
+
+  // 可读标识:有 label 用 label,否则用相对时间(如「刚刚」「5分前」)
+  const msg = document.createElement("span");
+  msg.className = "commit-msg cp-label";
+  const hasLabel = cp.label && cp.label.trim();
+  msg.textContent = hasLabel ? cp.label : relTimeShort(cp.timestamp);
+  msg.title = relTime(cp.timestamp);
+  main.appendChild(msg);
+
+  const time = document.createElement("span");
+  time.className = "commit-time";
+  time.textContent = relTimeShort(cp.timestamp);
+  time.title = relTime(cp.timestamp);
+  const meta = document.createElement("span");
+  meta.className = "commit-meta";
+  meta.append(time);
+  main.appendChild(meta);
+
+  // 操作按钮(悬停显示,绝对定位右侧):删除 + 读档
+  const actions = document.createElement("span");
+  actions.className = "cp-actions";
+  const del = document.createElement("button");
+  del.className = "cp-act";
+  del.textContent = "删除";
+  del.title = "删除此存档点（仅移除标记，不影响代码）";
+  del.addEventListener("click", (ev) => { ev.stopPropagation(); deleteCheckpoint(cp.id); });
+  const restore = document.createElement("button");
+  restore.className = "cp-act";
+  restore.textContent = "读档";
+  restore.title = "回到此存档点的完整状态";
+  restore.addEventListener("click", (ev) => { ev.stopPropagation(); askRestore(cp.id); });
+  actions.append(del, restore);
+  main.appendChild(actions);
+
+  li.appendChild(main);
+  return li;
+}
+
+// 一键打点(不弹框,label 留空,时间线条目用相对时间标识)
+async function createCheckpoint() {
+  if (!repo) return;
+  setButtonLoading($("btn-checkpoint"), true, "存档中…");
+  let ok = false;
+  try {
+    await invoke("checkpoint_create", { repo, label: null });
+    ok = true;
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading($("btn-checkpoint"), false);
+  }
+  await refresh();
+  if (ok) toast("已创建存档点", true);
+}
+
+let restoreId = null;
+function askRestore(id) {
+  restoreId = id;
+  $("dlg-restore").classList.remove("hidden");
+}
+
+async function doRestore() {
+  if (!restoreId) return;
+  $("dlg-restore").classList.add("hidden");
+  setButtonLoading($("btn-restore-confirm"), true, "读档中…");
+  let ok = false;
+  try {
+    await invoke("checkpoint_restore", { repo, id: restoreId });
+    ok = true;
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading($("btn-restore-confirm"), false);
+  }
+  restoreId = null;
+  await refresh();
+  if (ok) toast("已读档到存档点", true);
+}
+
+async function deleteCheckpoint(id) {
+  try {
+    await invoke("checkpoint_delete", { repo, id });
+    toast("已删除存档点", true);
+  } catch (e) {
+    toast(String(e), false);
+  }
+  await refresh();
 }
 
 function showEmpty(showInit) {

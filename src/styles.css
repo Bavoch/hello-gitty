@@ -492,6 +492,28 @@ body.resizing { cursor: col-resize; user-select: none; }
 .rollback:disabled { visibility: hidden; }
 .history-none { padding: 4px 32px 8px; font-size: 12px; color: var(--text-dim); }
 
+/* ===== 存档点条目(复用 .commit-row 外壳,穿插进版本时间线) ===== */
+.checkpoint-row .cp-flag {
+  flex: none; display: inline-flex; align-items: center; color: var(--orange);
+}
+.checkpoint-row .cp-tag {
+  font-size: 10px; padding: 0 4px; border-radius: 3px; flex: none;
+  background: #f0a02022; color: var(--orange);
+}
+/* 无标签时用相对时间当标识,弱化配色与提交区分 */
+.checkpoint-row .cp-label { color: var(--text-dim); }
+/* 操作按钮:悬停时覆盖在时间列之上(时间列已由 .commit-row:hover 隐藏) */
+.checkpoint-row .cp-actions {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  display: none; gap: 4px;
+}
+.checkpoint-row:hover .cp-actions { display: inline-flex; }
+.cp-act {
+  font-size: 12px; padding: 1px 5px; border-radius: 3px; cursor: pointer;
+  border: none; background: var(--hover); color: var(--accent-bright);
+}
+.cp-act:hover { background: var(--panel-2); color: #a5a8ff; }
+
 .mono { font-family: var(--mono); color: var(--accent); }
 
 /* ===== 弹窗 ===== */

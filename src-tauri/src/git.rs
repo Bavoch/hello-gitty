@@ -90,6 +90,42 @@ pub fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
     run_git_impl(repo, args, false)
 }
 
+/// 同 run_git,但额外注入环境变量(用于 GIT_INDEX_FILE 指向临时 index,
+/// 构造含未跟踪文件的工作区快照而不污染真 index)。复用同一把仓库锁与 index.lock 重试。
+pub fn run_git_env(repo: &str, args: &[&str], env: &[(&str, &str)]) -> Result<String, String> {
+    run_git_env_impl(repo, args, env, false)
+}
+
+fn run_git_env_impl(repo: &str, args: &[&str], env: &[(&str, &str)], retried: bool) -> Result<String, String> {
+    let lock = repo_git_lock(repo);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let res = run_git_with_env(repo, args, env);
+    if !retried {
+        if let Err(e) = &res {
+            if is_lock_error(e) && remove_stale_index_lock(repo) {
+                drop(_guard);
+                return run_git_env_impl(repo, args, env, true);
+            }
+        }
+    }
+    res
+}
+
+fn run_git_with_env(repo: &str, args: &[&str], env: &[(&str, &str)]) -> Result<String, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(repo).args(args);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().map_err(|e| format!("无法执行 git： {e}"))?;
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        return Err(if stderr.trim().is_empty() { stdout } else { stderr }.trim().to_string());
+    }
+    Ok(stdout)
+}
+
 fn run_git_impl(repo: &str, args: &[&str], retried: bool) -> Result<String, String> {
     let lock = repo_git_lock(repo);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
