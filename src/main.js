@@ -6,9 +6,6 @@ const $ = (id) => document.getElementById(id);
 
 const DEFAULT_AI = { base_url: "https://api.deepseek.com", api_key: "", model: "deepseek-v4-flash", lang: "中文", commit_mode: "auto", custom_prompt: "" };
 const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" };
-// 合并按钮两态图标:提交(对勾)/推送(上传)
-const SHIP_CHECK = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
-const SHIP_PUSH = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>';
 
 const SIDEBAR_MIN = 48, SIDEBAR_MAX = 420; // 侧栏拖拽宽度范围
 const SIDEBAR_COMPACT_MAX = 96; // 简洁展示的宽度上限(含);更宽自动切全面展示
@@ -17,12 +14,11 @@ let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [] };
 let repos = []; // 侧栏仓库摘要列表
 let repo = null;
 let busy = false;
-let pendingPush = false; // 推送流程:等待手动填写提交信息后自动继续推送
 let fetching = false; // 后台 fetch 防重入:定时器与手动刷新共用
 const sectionUserSet = new Set(); // 用户手动切换过的分组:自动收起规则不再覆盖其状态
 let toastTimer = null;
-let shipMode = "idle";    // 合并按钮当前态:commit / push / idle
 let lastShipStatus = null; // 最近一次仓库状态,供按钮在 loading 结束后重建
+let lastStatus = null; // 最近一次仓库状态,供侧栏当前项目显示修改情况
 let popState = "idle";     // 提交弹窗态:streaming(生成中) / ready(可编辑确认) / idle(关闭)
 let streamCancelled = false; // 软取消:流式中忽略后续事件、不自动提交
 let streamBusy = false;    // 流式 invoke 进行中(含已软取消但后端未返回),用于阻塞重复触发
@@ -87,16 +83,14 @@ function bindEvents() {
   $("btn-stage-all").addEventListener("click", () => stageAll(true));
   $("btn-unstage-all").addEventListener("click", () => stageAll(false));
   $("btn-discard-all").addEventListener("click", discardAll);
-  $("btn-ship").addEventListener("click", async () => {
-    if (shipMode === "commit") onCommit($("btn-ship"));
-    else if (shipMode === "push") { await doPush(); await refresh(); }
-  });
+  $("btn-commit").addEventListener("click", () => onCommit());
+  $("btn-push").addEventListener("click", async () => { await doPush(); await refresh(); });
   // 提交流式弹窗按钮
   $("commit-pop-close").addEventListener("click", cancelCommitPop);
   $("commit-pop-cancel").addEventListener("click", cancelCommitPop);
   $("commit-pop-regen").addEventListener("click", () => streamCommitMessage());
   $("commit-pop-ok").addEventListener("click", () => commitWithMessage($("commit-stream-text").value));
-  $("btn-pull").addEventListener("click", () => pushPull("pull"));
+  $("btn-pull").addEventListener("click", doPull);
   $("btn-branch").addEventListener("click", (e) => {
     e.stopPropagation();
     const menu = $("branch-menu");
@@ -226,12 +220,6 @@ function bindEvents() {
       document.querySelectorAll(".settings-tab").forEach((t) => t.classList.toggle("hidden", t.dataset.tab !== tab));
     });
   });
-  $("btn-commit-cancel").addEventListener("click", () => {
-    pendingPush = false; // 取消手动填写:中止自动推送流程
-    $("dlg-commit").classList.add("hidden");
-  });
-  $("btn-commit-confirm").addEventListener("click", doCommit);
-  $("btn-regen").addEventListener("click", regenMessage);
   $("btn-conflict-done").addEventListener("click", () => $("dlg-conflict").classList.add("hidden"));
   $("btn-merge-ai").addEventListener("click", () => {
     $("dlg-merge-conflict").classList.add("hidden");
@@ -253,10 +241,6 @@ function bindEvents() {
       $(h.dataset.target).classList.toggle("hidden");
     })
   );
-
-  $("commit-msg").addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") doCommit();
-  });
 }
 
 /* ===== 仓库 ===== */
@@ -457,9 +441,15 @@ function renderRepoList() {
     info.appendChild(name);
     const meta = document.createElement("div");
     meta.className = "repo-meta";
-    // 第二行展示项目路径;过长时按可用宽度智能省略(见 fitPath)
-    meta.dataset.path = r.path;
-    meta.textContent = r.path;
+    const showStatus = r.path === repo && lastStatus && lastStatus.is_repo;
+    if (showStatus) {
+      // 当前项目:第二行显示本地修改情况(暂存/更改计数或已全部提交)
+      meta.textContent = repoStatusText(lastStatus);
+    } else {
+      // 其他项目:第二行展示项目路径;过长时按可用宽度智能省略(见 fitPath)
+      meta.dataset.path = r.path;
+      meta.textContent = r.path;
+    }
     info.append(name, meta);
 
     li.append(ic, info);
@@ -514,6 +504,7 @@ function fitPath(el, path) {
 // 侧栏宽度变化(拖拽调整、初始布局)后,重新对所有路径做智能省略
 function fitAllPaths() {
   for (const el of $("repo-list").querySelectorAll(".repo-meta")) {
+    if (!el.dataset.path) continue; // 当前项目的状态文本行不参与路径省略
     fitPath(el, el.dataset.path || "");
   }
 }
@@ -612,11 +603,19 @@ function showRefreshing() {
 
 // 用已拿到的状态就地更新侧栏当前仓库项(零额外 git 调用)
 function updateSidebarCurrent(st) {
+  lastStatus = st;
   const idx = repos.findIndex((r) => r.path === repo);
   if (idx < 0) return;
-  // 第二行现在只展示路径,状态徽标已移至右侧面板,此处仅同步是否 Git 仓库
   repos[idx] = { ...repos[idx], is_repo: st.is_repo };
   renderRepoList();
+}
+
+// 侧栏当前项目第二行:本地修改情况(暂存:N，更改:N;干净时显示已全部提交)
+function repoStatusText(st) {
+  const staged = st.staged.length;
+  const changed = st.unstaged.length + st.untracked.length;
+  if (staged === 0 && changed === 0) return "已全部提交";
+  return "暂存：" + staged + "，更改：" + changed;
 }
 
 // 顶部标题栏:当前项目图标 + 名称(数据复用侧栏仓库摘要,无需额外请求)
@@ -675,7 +674,7 @@ function commitRow(c, headHash) {
   li.className = "commit-row";
   const isHead = headHash && c.hash === headHash;
 
-  // 主行:圆点 + HEAD + message + 归属/时间 + 回退(默认不显示 ID)
+  // 主行:圆点 + 当前标签 + message + 归属/时间 + 回退(默认不显示 ID)
   const main = document.createElement("div");
   main.className = "commit-main";
 
@@ -684,22 +683,8 @@ function commitRow(c, headHash) {
   caret.innerHTML = '<svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   main.appendChild(caret);
 
-  if (isHead) {
-    const tag = document.createElement("span");
-    tag.className = "h-head-tag";
-    tag.textContent = "HEAD";
-    main.appendChild(tag);
-  }
-
-  const msg = document.createElement("span");
-  msg.className = "commit-msg";
-  msg.textContent = c.subject;
-  main.appendChild(msg);
-
-  const meta = document.createElement("span");
-  meta.className = "commit-meta";
-  // 双槽位固定渲染:本地恒在左、远程恒在右;缺失的槽用 visibility:hidden 占位,
-  // 保证所有行图标都在同一竖线,单图标行不位移
+  // 归属图标(本地/远程)位于左侧文字前:双槽位固定渲染,缺失槽 visibility:hidden 占位,
+  // 保证所有行图标同列、消息文字从同一 x 起点开始
   const loci = document.createElement("span");
   loci.className = "commit-loci";
   const loc = document.createElement("span");
@@ -714,18 +699,35 @@ function commitRow(c, headHash) {
   rem.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
   if (!c.remote) rem.classList.add("none");
   loci.appendChild(rem);
+  main.appendChild(loci);
+
+  if (isHead) {
+    const tag = document.createElement("span");
+    tag.className = "h-head-tag";
+    tag.textContent = "当前";
+    tag.title = "当前所在的位置（本地最新提交）";
+    main.appendChild(tag);
+  }
+
+  const msg = document.createElement("span");
+  msg.className = "commit-msg";
+  msg.textContent = c.subject;
+  main.appendChild(msg);
+
   const time = document.createElement("span");
   time.className = "commit-time";
   time.textContent = relTimeShort(c.timestamp);
   time.title = relTime(c.timestamp);
-  meta.append(loci, time);
+  const meta = document.createElement("span");
+  meta.className = "commit-meta";
+  meta.append(time);
   main.appendChild(meta);
 
   const rb = document.createElement("button");
   rb.className = "rollback";
   rb.textContent = "回退";
   rb.disabled = isHead;
-  rb.title = isHead ? "当前 HEAD" : "强制回退到此版本（丢弃之后所有提交）";
+  rb.title = isHead ? "当前提交，不可回退" : "强制回退到此版本（丢弃之后所有提交）";
   rb.addEventListener("click", (ev) => {
     ev.stopPropagation();
     askReset(c.hash, c.short);
@@ -740,8 +742,16 @@ function commitRow(c, headHash) {
   detail.append(part(c.author), part("·"), part(relTime(c.timestamp)), part("·"), part(c.hash, "cd-hash"));
   li.appendChild(detail);
 
-  // 点击行(回退按钮已 stopPropagation)切换展开/收起
-  li.addEventListener("click", () => li.classList.toggle("expanded"));
+  // 点击行(回退按钮已 stopPropagation)切换展开/收起;同时只允许展开一个,
+  // 点击展开某行时自动收起其他已展开行
+  li.addEventListener("click", () => {
+    if (li.classList.contains("expanded")) {
+      li.classList.remove("expanded");
+      return;
+    }
+    document.querySelectorAll(".commit-row.expanded").forEach((el) => el.classList.remove("expanded"));
+    li.classList.add("expanded");
+  });
   return li;
 }
 
@@ -828,14 +838,14 @@ function showEmpty(showInit) {
   }
   $("branch-name").textContent = "—";
   $("branch-name").title = "";
-  // 无仓库:合并按钮复位为禁用,idle 态
-  shipMode = "idle";
+  // 无仓库:提交/推送/拉取按钮复位为次要态(不禁用,点击有 toast 提示)
   lastShipStatus = null;
-  const sb = $("btn-ship");
-  if (sb) {
-    sb.disabled = true;
-    if ($("ship-count")) $("ship-count").className = "btn-count hidden";
+  for (const id of ["btn-commit", "btn-push", "btn-pull"]) {
+    const b = $(id);
+    if (b) b.classList.remove("primary");
   }
+  if ($("commit-count")) $("commit-count").className = "btn-count hidden";
+  if ($("push-count")) $("push-count").className = "btn-count hidden";
   if ($("pull-count")) $("pull-count").classList.add("hidden");
 }
 
@@ -845,45 +855,42 @@ function setSectionOpen(secId, targetId, open) {
   $(targetId).classList.toggle("hidden", !open);
 }
 
-// 合并的「提交/推送」按钮:有暂存→提交(绿角标),否则有领先提交→推送(蓝角标),否则禁用。
-// 必须先提交(暂存清空、产生领先提交)后才会进入推送态。
-function setShipButton(st) {
-  const btn = $("btn-ship");
-  if (!btn) return;
-  const icon = $("ship-icon"), label = $("ship-label"), count = $("ship-count");
-  // 有任何本地改动(暂存/未暂存/未跟踪)→提交;全部提交完且有领先→推送(对标 VS Code)
+// 提交按钮:有任何本地更改 → 主按钮样式;干净 → 正常次要样式(永不禁用,空操作走 toast)
+function setCommitButton(st) {
+  const btn = $("btn-commit");
+  if (!btn || btn.classList.contains("loading")) return; // loading 中不重建,避免打断操作
+  const count = $("commit-count");
   const pending = st.staged.length + st.unstaged.length + st.untracked.length;
-  if (pending > 0) {
-    shipMode = "commit";
-    icon.innerHTML = SHIP_CHECK;
-    label.textContent = "提交";
-    count.className = "btn-count commit";
-    count.textContent = pending;
-    btn.disabled = false;
-    btn.title = "提交全部本地更改";
-  } else if (st.ahead > 0) {
-    shipMode = "push";
-    icon.innerHTML = SHIP_PUSH;
-    label.textContent = "推送";
-    count.className = "btn-count push";
-    count.textContent = st.ahead;
-    btn.disabled = false;
-    btn.title = "推送本地领先的提交";
-  } else {
-    shipMode = "idle";
-    icon.innerHTML = SHIP_CHECK;
-    label.textContent = "提交";
-    count.className = "btn-count hidden";
-    btn.disabled = true;
-    btn.title = "没有待提交或待推送的内容";
+  btn.disabled = false;
+  btn.title = pending > 0 ? "提交全部本地更改" : "没有可提交的更改";
+  btn.classList.toggle("primary", pending > 0);
+  if (count) {
+    count.classList.toggle("hidden", pending === 0);
+    if (pending > 0) count.textContent = pending;
   }
-  // 可操作时(提交/推送)用主题色主按钮样式,空闲时退回幽灵按钮
-  btn.classList.toggle("primary", shipMode !== "idle");
+}
+
+// 推送按钮:本地领先 → 主按钮样式;无领先 → 正常次要样式(永不禁用,空操作走 toast)
+function setPushButton(st) {
+  const btn = $("btn-push");
+  if (!btn || btn.classList.contains("loading")) return;
+  const count = $("push-count");
+  const dirty = st.ahead > 0;
+  btn.disabled = false;
+  btn.title = dirty ? "推送本地领先的提交" : "没有待推送的提交";
+  btn.classList.toggle("primary", dirty);
+  if (count) {
+    count.classList.toggle("hidden", !dirty);
+    if (dirty) count.textContent = st.ahead;
+  }
 }
 
 // 操作完成后的 loading 复位会还原按钮旧 DOM,这里按最新状态重建,避免显示态错乱
-function refreshShipButton() {
-  if (lastShipStatus) setShipButton(lastShipStatus);
+function refreshShipButtons() {
+  if (lastShipStatus) {
+    setCommitButton(lastShipStatus);
+    setPushButton(lastShipStatus);
+  }
 }
 
 function showPanel(st) {
@@ -910,10 +917,17 @@ function showPanel(st) {
   // 右侧面板显示当前分支
   $("branch-name").textContent = st.detached ? "（分离）" : (st.branch || "（无分支）");
   $("branch-name").title = st.branch || "";
-  // 合并的提交/推送按钮按状态切换(暂存→提交,否则领先→推送);拉取按钮显示落后数
   lastShipStatus = st;
-  setShipButton(st);
-  const lc = $("pull-count");
+  setCommitButton(st);
+  setPushButton(st);
+  // 拉取按钮同规则:有落后 → 主按钮样式;已同步 → 正常次要样式(永不禁用,空操作走 toast)
+  const pb = $("btn-pull"), lc = $("pull-count");
+  if (pb && !pb.classList.contains("loading")) {
+    const dirty = st.behind > 0;
+    pb.disabled = false;
+    pb.title = dirty ? "拉取远程更新" : "已是最新";
+    pb.classList.toggle("primary", dirty);
+  }
   if (lc) {
     lc.classList.toggle("hidden", !(st.behind > 0));
     if (st.behind > 0) lc.textContent = st.behind;
@@ -964,6 +978,13 @@ function renderList(listId, entries, kind, countEl) {
       ig.textContent = "忽略";
       ig.addEventListener("click", (ev) => { ev.stopPropagation(); askIgnore(e.path); });
       actions.appendChild(ig);
+      // 仅未暂存/未跟踪行提供「丢弃」(已跟踪→还原,未跟踪→删除)
+      if (kind === "unstaged") {
+        const di = document.createElement("button");
+        di.textContent = "丢弃";
+        di.addEventListener("click", (ev) => { ev.stopPropagation(); askDiscardFile(e.path); });
+        actions.appendChild(di);
+      }
     }
     li.appendChild(actions);
 
@@ -1050,7 +1071,22 @@ async function stageAll(stage) {
   await refresh();
 }
 
+let discardTarget = null; // 丢弃确认:null=丢弃全部更改;路径=丢弃单个文件
+
 function discardAll() {
+  discardTarget = null;
+  $("discard-title").textContent = "取消所有修改";
+  $("discard-hint").textContent = "将丢弃所有未暂存与已暂存的改动，工作区恢复到上次提交的状态，此操作不可恢复。";
+  $("btn-discard-all-confirm").textContent = "确认取消所有修改";
+  $("dlg-discard-all").classList.remove("hidden");
+}
+
+// 单文件丢弃:复用确认框,标题/文案指向具体文件
+function askDiscardFile(path) {
+  discardTarget = path;
+  $("discard-title").textContent = "丢弃更改";
+  $("discard-hint").textContent = "将丢弃「" + path + "」的未提交更改（未跟踪文件将被删除），此操作不可恢复。";
+  $("btn-discard-all-confirm").textContent = "确认丢弃";
   $("dlg-discard-all").classList.remove("hidden");
 }
 
@@ -1058,8 +1094,12 @@ async function doDiscardAll() {
   const btn = $("btn-discard-all");
   $("dlg-discard-all").classList.add("hidden");
   setButtonLoading(btn, true, "");
+  const target = discardTarget;
+  discardTarget = null;
   try {
-    await invoke("git_discard_all", { repo });
+    if (target) await invoke("git_discard_file", { repo, path: target });
+    else await invoke("git_discard_all", { repo });
+    toast(target ? "已丢弃该文件的更改" : "已取消所有修改", true);
   } catch (e) {
     toast(String(e), false);
   } finally {
@@ -1079,8 +1119,8 @@ async function toggleStage(path, unstage) {
   await refresh();
 }
 
-async function onCommit(btn) {
-  btn = btn || $("btn-ship");
+async function onCommit() {
+  if (!repo) { toast("请先打开项目", false); return; }
   // 弹窗已开或流式生成进行中时不重复触发
   if (popState !== "idle" || streamBusy) return;
   const st = await invoke("git_status", { repo });
@@ -1093,7 +1133,7 @@ async function onCommit(btn) {
   } catch (e) {
     toast(String(e), false);
   } finally {
-    refreshShipButton();
+    refreshShipButtons();
   }
 }
 
@@ -1177,54 +1217,10 @@ async function commitWithMessage(msg) {
   await refresh();
 }
 
-function showCommitDialog(msg, hint) {
-  $("commit-msg").value = msg;
-  $("commit-hint").textContent = hint;
-  $("dlg-commit").classList.remove("hidden");
-  $("commit-msg").focus();
-}
-
-async function regenMessage() {
-  setButtonLoading($("btn-regen"), true, "生成中…");
-  try {
-    const msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
-    $("commit-msg").value = msg;
-    $("commit-hint").textContent = "AI 已重新生成，可修改后提交";
-  } catch (e) {
-    $("commit-hint").textContent = "AI 生成失败：" + e;
-  } finally {
-    setButtonLoading($("btn-regen"), false);
-  }
-}
-
-async function doCommit() {
-  const msg = $("commit-msg").value.trim();
-  if (!msg) { toast("提交信息不能为空", false); return; }
-  $("dlg-commit").classList.add("hidden");
-  // 弹窗关闭后,在合并按钮上体现加载状态
-  setButtonLoading($("btn-ship"), true, "提交中…");
-  try {
-    const r = await invoke("git_commit", { repo, message: msg });
-    if (r && r.ok === false) toast(r.output, false);
-    else {
-      toast("提交成功", true);
-      // 由推送触发的手动填写:提交完成后自动继续推送
-      if (pendingPush) {
-        pendingPush = false;
-        await doPush();
-      }
-    }
-  } catch (e) {
-    toast(String(e), false);
-  } finally {
-    setButtonLoading($("btn-ship"), false);
-  }
-  await refresh();
-}
-
 // 实际推送(git_push + 授权引导)
 async function doPush() {
-  const btn = $("btn-ship");
+  if (!repo) { toast("请先打开项目", false); return; }
+  const btn = $("btn-push");
   setButtonLoading(btn, true, "推送中…");
   try {
     const r = await invoke("git_push", { repo });
@@ -1239,31 +1235,8 @@ async function doPush() {
   }
 }
 
-async function pushPull(kind) {
-  if (kind === "push") {
-    // 推送前:本地所有修改(暂存+未暂存+未跟踪)全部提交,再推送
-    try {
-      const st = await invoke("git_status", { repo });
-      if (st.staged.length + st.unstaged.length + st.untracked.length > 0) {
-        await invoke("git_stage_all", { repo });
-        let msg = "";
-        try {
-          msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
-        } catch (e) {
-          // AI 不可用:手动填写提交信息,确认后自动继续推送
-          pendingPush = true;
-          showCommitDialog("", "AI 生成提交信息失败：" + e + " 请手动填写，确认后将自动推送");
-          return;
-        }
-        const r = await invoke("git_commit", { repo, message: msg });
-        if (r && r.ok === false) { toast(r.output, false); return; }
-      }
-    } catch (e) { toast(String(e), false); return; }
-    await doPush();
-    await refresh();
-    return;
-  }
-  // 拉取
+async function doPull() {
+  if (!repo) { toast("请先打开项目", false); return; }
   const btn = $("btn-pull");
   setButtonLoading(btn, true, "拉取中…");
   try {
@@ -1505,15 +1478,21 @@ function setBusy(v, text) {
 /* 按钮级加载状态:按钮内显示 spinner + 文案,并隐藏全局忙碌指示 */
 function setButtonLoading(btn, loading, text) {
   if (loading) {
+    btn.dataset.origDisabled = btn.disabled;
+    btn.disabled = true;
     btn.dataset.orig = btn.innerHTML;
     btn.classList.add("loading");
-    btn.disabled = true;
     btn.innerHTML = '<span class="btn-spinner"></span>' + (text || "");
     $("sb-busy").classList.add("hidden");
   } else {
     btn.classList.remove("loading");
     if (btn.dataset.orig !== undefined) btn.innerHTML = btn.dataset.orig;
     delete btn.dataset.orig;
+    // 恢复 loading 前的禁用态(工具栏按钮原本不禁用 → 恢复为可用)
+    if (btn.dataset.origDisabled !== undefined) {
+      btn.disabled = btn.dataset.origDisabled === "true";
+      delete btn.dataset.origDisabled;
+    }
   }
 }
 

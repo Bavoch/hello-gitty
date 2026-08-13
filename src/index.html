@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hello Gitty</title>
-  <link rel="stylesheet" href="styles.css?v=20260823" />
+  <link rel="stylesheet" href="styles.css?v=20260841" />
   <script>
     // 仅开发模式(http://localhost:1420)生效:检测源文件变更后自动刷新窗口
     if (location.protocol === "http:") {
@@ -74,10 +74,15 @@
       </div>
       <section id="toolbar">
         <div class="ship-wrap">
-          <button id="btn-ship" class="tool-btn" title="提交" disabled>
-            <span id="ship-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-            <span id="ship-label">提交</span>
-            <span id="ship-count" class="btn-count hidden"></span>
+          <button id="btn-commit" class="tool-btn" title="提交" disabled>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            提交
+            <span id="commit-count" class="btn-count commit hidden" title="待提交的更改数"></span>
+          </button>
+          <button id="btn-push" class="tool-btn" title="推送" disabled>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+            推送
+            <span id="push-count" class="btn-count push hidden" title="本地领先的提交数"></span>
           </button>
           <!-- 提交信息流式就地弹窗 -->
           <div id="commit-pop" class="commit-pop hidden">
@@ -184,7 +189,7 @@
             <div class="section-head-row">
               <button class="section-head" data-target="history-container">
                 <span class="caret"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
-                <span>历史</span>
+                <span>版本</span>
                 <span class="count" id="history-count">0</span>
               </button>
             </div>
@@ -194,21 +199,6 @@
       </div>
     </div>
   </main>
-
-  <!-- 提交信息对话框 -->
-  <div class="overlay hidden" id="dlg-commit">
-    <div class="dialog">
-      <h3>提交所有修改</h3>
-      <p class="dlg-hint" id="commit-hint">AI 正在撰写提交信息…</p>
-      <textarea id="commit-msg" rows="6" placeholder="提交信息…"></textarea>
-      <div class="dlg-actions">
-        <button class="tool-btn" id="btn-regen">重新生成</button>
-        <span class="spacer"></span>
-        <button class="tool-btn" id="btn-commit-cancel">取消</button>
-        <button class="tool-btn primary" id="btn-commit-confirm">提交</button>
-      </div>
-    </div>
-  </div>
 
   <!-- 浏览器授权 Token 输入 -->
   <div class="overlay hidden" id="dlg-token">
@@ -237,11 +227,11 @@
     </div>
   </div>
 
-  <!-- 取消所有修改确认 -->
+  <!-- 取消所有修改确认(复用:也用于单文件丢弃) -->
   <div class="overlay hidden" id="dlg-discard-all">
     <div class="dialog">
-      <h3>取消所有修改</h3>
-      <p class="dlg-hint warn">将丢弃所有未暂存与已暂存的改动，工作区恢复到上次提交的状态，此操作不可恢复。</p>
+      <h3 id="discard-title">取消所有修改</h3>
+      <p class="dlg-hint warn" id="discard-hint">将丢弃所有未暂存与已暂存的改动，工作区恢复到上次提交的状态，此操作不可恢复。</p>
       <div class="dlg-actions">
         <button class="tool-btn" id="btn-discard-all-cancel">取消</button>
         <span class="spacer"></span>
@@ -390,6 +380,6 @@
   </div>
   <div id="toast"></div>
 
-  <script src="main.js?v=20260823"></script>
+  <script src="main.js?v=20260841"></script>
 </body>
 </html>

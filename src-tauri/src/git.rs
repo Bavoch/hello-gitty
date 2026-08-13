@@ -362,6 +362,15 @@ pub fn discard_all_changes(repo: &str) -> Result<(), String> {
     run_git(repo, &["restore", "--", "."]).map(|_| ())
 }
 
+/// 丢弃单个文件的更改:已跟踪 → git restore 还原工作区;未跟踪 → git clean 删除
+pub fn discard_file(repo: &str, path: &str) -> Result<(), String> {
+    if run_git(repo, &["ls-files", "--error-unmatch", "--", path]).is_ok() {
+        run_git(repo, &["restore", "--", path]).map(|_| ())
+    } else {
+        run_git(repo, &["clean", "-fd", "--", path]).map(|_| ())
+    }
+}
+
 pub fn commit(repo: &str, message: &str) -> Result<String, String> {
     git_stdin(repo, &["commit", "-F", "-"], message)
 }

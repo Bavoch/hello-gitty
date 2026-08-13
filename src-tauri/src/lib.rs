@@ -501,6 +501,14 @@ async fn git_discard_all(repo: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+/// 丢弃单个文件更改(已跟踪还原/未跟踪删除)
+#[tauri::command]
+async fn git_discard_file(repo: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git::discard_file(&repo, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn git_commit(repo: String, message: String) -> OpResult {
     op(tauri::async_runtime::spawn_blocking(move || git::commit(&repo, &message)).await.unwrap_or_else(|e| Err(e.to_string())))
@@ -798,6 +806,7 @@ pub fn run() {
             git_stage_file,
             git_unstage_file,
             git_discard_all,
+            git_discard_file,
             git_commit,
             git_push,
             git_push_with_token,

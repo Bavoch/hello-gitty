@@ -10,12 +10,13 @@
   --text-head: #bbbbbb;
   --accent: #6366f1;   /* 与 logo 渐变的 indigo-500 一致 */
   --accent-hover: #7a6df6; /* indigo → violet 过渡 */
+  --accent-bright: #8b8af7; /* 悬停操作文字按钮:比主题色稍亮,便于在深底上辨识 */
   --green: #89d185;
   --red: #f48771;
   --yellow: #dcdcaa;
   --orange: #cc7832;
   --blue: #75beff;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", "Microsoft YaHei", monospace;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -115,7 +116,7 @@ select option { background: #3c3c3c; color: var(--text); }
   padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--border);
 }
 /* 工具栏按钮角标定位基点 */
-#btn-ship, #btn-pull { position: relative; }
+#btn-commit, #btn-push, #btn-pull { position: relative; }
 .btn-count {
   position: absolute; top: -3px; right: -4px;
   min-width: 14px; height: 14px; padding: 0 3px;
@@ -135,8 +136,6 @@ select option { background: #3c3c3c; color: var(--text); }
   font-size: 13px;
 }
 .tool-btn svg { flex: none; }
-/* 合并按钮的图标包在 span 里,需 inline-flex 居中,否则 SVG 贴文本基线偏上 */
-#ship-icon { display: inline-flex; align-items: center; }
 .tool-btn:hover:not(:disabled) { background: var(--hover-strong); }
 .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 /* 主操作:主题色实心按钮 */
@@ -201,7 +200,7 @@ select option { background: #3c3c3c; color: var(--text); }
 }
 
 /* 提交按钮就地弹窗(流式生成提交信息) */
-.ship-wrap { position: relative; display: inline-flex; }
+.ship-wrap { position: relative; display: inline-flex; gap: 6px; }
 .commit-pop {
   position: absolute; left: 0; top: calc(100% + 6px); z-index: 60;
   width: 340px; background: var(--panel-2); border: 1px solid var(--border);
@@ -370,10 +369,11 @@ body.resizing { cursor: col-resize; user-select: none; }
 .file-list:empty { display: none; }
 .file-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 3px 12px 3px 20px; cursor: pointer;
+  padding: 3px 12px 3px 32px; cursor: pointer; /* 32px = 与分组标题文字左对齐(12+14+6) */
+  position: relative; /* 悬停操作按钮的定位锚点 */
 }
-/* 冲突行保留状态字母徽标,相应留出徽标占位 */
-.file-row.conflict { padding-left: 42px; }
+/* 冲突行保留状态字母徽标,徽标与内容起点对齐(路径落在 54px=冲突标题位置) */
+.file-row.conflict { padding-left: 32px; }
 .file-row:hover { background: var(--hover); }
 .file-row .st {
   width: 14px; height: 14px; font-size: 11px; font-weight: 700;
@@ -389,12 +389,14 @@ body.resizing { cursor: col-resize; user-select: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .file-row .orig { color: var(--text-dim); }
-.row-actions { display: none; align-items: center; gap: 6px; }
-.file-row:hover .row-actions { display: inline-flex; }
-.row-actions button { font-size: 12px; line-height: 1.2; color: var(--text-dim); padding: 1px 5px; border: none; border-radius: 3px; }
-.row-actions button:hover { background: var(--panel-2); color: var(--text); }
-.row-actions .resolve { color: var(--orange); }
-.row-actions .resolve:hover { background: #cc783233; }
+/* 悬停操作按钮:绝对定位覆盖在行右侧(不挤动路径文字),主题色 */
+.row-actions {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  display: none; align-items: center; gap: 3px;
+}
+.file-row:hover .row-actions { display: inline-flex; background: var(--hover); }
+.row-actions button { font-size: 12px; line-height: 1.2; color: var(--accent-bright); padding: 1px 5px; border: none; border-radius: 3px; }
+.row-actions button:hover { background: var(--panel-2); color: #a5a8ff; }
 
 /* ===== 忙碌指示 ===== */
 .busy-ind {
@@ -434,18 +436,22 @@ body.resizing { cursor: col-resize; user-select: none; }
 .history-list:empty { display: none; }
 .commit-row {
   display: flex; flex-direction: column; min-width: 0;
-  padding: 4px 12px 4px 20px; cursor: pointer;
+  padding: 4px 12px 4px 32px; cursor: pointer; /* 32px = 与分组标题文字左对齐 */
   user-select: none; /* 历史行文字不允许选中(提交信息/时间/详情) */
 }
 .commit-main { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; position: relative; }
-/* 点击行展开的详情:作者 · 完整时间 · 完整 hash */
+/* 点击行展开的详情:作者 · 完整时间 · 完整 hash。
+   左内边距 55px = 信息文字列(87px) - 行内容起点(32px 行内边距),
+   使详情文字与主行提交信息文字对齐 */
 .commit-detail {
-  display: none; padding: 3px 0 6px; gap: 6px; align-items: center;
+  display: none; padding: 3px 0 6px 55px; gap: 6px; align-items: center;
   font-size: 11px; color: var(--text-dim);
 }
 .commit-row.expanded .commit-detail { display: inline-flex; }
 .commit-detail .cd-hash { font-family: var(--mono); }
 .commit-row:hover { background: var(--hover); }
+/* 悬停时隐藏右侧图标与时间(visibility 保留占位不跳动),仅留「回退」按钮 */
+.commit-row:hover .commit-meta { visibility: hidden; }
 /* 展开收起箭头:收起右指 ▸,展开下指 ▼(随 .expanded 旋转) */
 .commit-caret {
   flex: none; display: inline-flex; align-items: center; color: var(--text-dim);
@@ -473,18 +479,18 @@ body.resizing { cursor: col-resize; user-select: none; }
 .commit-loci .loci-local { display: inline-flex; flex: none; color: var(--blue); }
 .commit-loci .loci-remote { display: inline-flex; flex: none; color: #c792ea; }
 .commit-loci .none { visibility: hidden; }
-/* 回退按钮:悬停时覆盖在右侧图标/时间之上,不占布局空间 */
+/* 回退按钮:悬停时覆盖在右侧图标/时间之上,不占布局空间;主题色 */
 .rollback {
   position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-  font-size: 12px; color: var(--text-dim);
+  font-size: 12px; color: var(--accent-bright);
   padding: 1px 5px; border-radius: 3px;
   border: none; background: transparent;
   visibility: hidden;
 }
 .commit-row:hover .rollback { visibility: visible; background: var(--hover); }
-.rollback:hover { background: var(--panel-2); color: var(--text); }
+.rollback:hover { background: var(--panel-2); color: #a5a8ff; }
 .rollback:disabled { visibility: hidden; }
-.history-none { padding: 4px 20px 8px; font-size: 12px; color: var(--text-dim); }
+.history-none { padding: 4px 32px 8px; font-size: 12px; color: var(--text-dim); }
 
 .mono { font-family: var(--mono); color: var(--accent); }
 
@@ -524,7 +530,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .settings-tab { display: flex; flex-direction: column; gap: 12px; }
 .settings-dialog .dlg-actions { padding: 12px 18px; border-top: 1px solid var(--border); flex: none; }
 .dlg-hint { font-size: 13px; color: var(--text-dim); }
-#commit-msg { min-height: 120px; resize: vertical; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
 #gitignore-content { width: 100%; min-height: 320px; resize: vertical; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
 .ignore-options { display: flex; flex-direction: column; gap: 4px; }
 .ignore-opt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; padding: 5px 8px; border-radius: 4px; }
