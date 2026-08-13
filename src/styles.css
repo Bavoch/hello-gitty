@@ -71,6 +71,7 @@ select option { background: #3c3c3c; color: var(--text); }
   border-radius: 0; /* 直角,与标题栏融合 */
 }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 /* 置顶激活:主题色 + 图钉倾斜(斜着钉住) */
 .icon-btn.active { color: var(--accent); }
 .icon-btn.active:hover { color: var(--accent); background: #6366f11a; }
@@ -434,12 +435,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .commit-row {
   display: flex; flex-direction: column; min-width: 0;
   padding: 4px 12px 4px 20px; cursor: pointer;
+  user-select: none; /* 历史行文字不允许选中(提交信息/时间/详情) */
 }
-.commit-main { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+.commit-main { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; position: relative; }
 /* 点击行展开的详情:作者 · 完整时间 · 完整 hash */
 .commit-detail {
   display: none; padding: 3px 0 6px; gap: 6px; align-items: center;
-  font-size: 11px; color: var(--text-dim); user-select: text;
+  font-size: 11px; color: var(--text-dim);
 }
 .commit-row.expanded .commit-detail { display: inline-flex; }
 .commit-detail .cd-hash { font-family: var(--mono); }
@@ -451,32 +453,35 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .commit-row.expanded .commit-caret { transform: rotate(0deg); }
 .commit-caret.head { color: var(--accent); }
-.commit-hash {
-  font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); flex: none;
-}
-.commit-hash.is-head { color: var(--accent); font-weight: 600; }
 .h-head-tag {
   font-size: 10px; padding: 0 4px; border-radius: 3px; flex: none;
   background: #6366f133; color: #a5a8ff;
 }
 .commit-msg {
   flex: 1; font-size: 12.5px; color: var(--text); min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .commit-meta {
   font-size: 11px; color: var(--text-dim); flex: none; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 5px;
 }
-/* 本地(分支)= 蓝色,远程(云朵)= 紫色 */
-.commit-loci { display: inline-flex; align-items: center; gap: 3px; }
-.commit-loci .loci-local { display: inline-flex; color: var(--blue); }
-.commit-loci .loci-remote { display: inline-flex; color: #c792ea; }
+/* 相对时间固定宽度(覆盖 12分前/12时前/12天前 等最长形态),右对齐,所有行时间列对齐 */
+.commit-time { width: 42px; text-align: right; flex: none; }
+/* 本地(分支)= 蓝色,远程(云朵)= 紫色;双槽位固定:本地恒左、远程恒右,
+   .none 用 visibility:hidden 占位(保留 11px 槽宽),单图标行不位移,所有行图标同列对齐 */
+.commit-loci { display: inline-flex; align-items: center; gap: 8px; width: 30px; flex: none; }
+.commit-loci .loci-local { display: inline-flex; flex: none; color: var(--blue); }
+.commit-loci .loci-remote { display: inline-flex; flex: none; color: #c792ea; }
+.commit-loci .none { visibility: hidden; }
+/* 回退按钮:悬停时覆盖在右侧图标/时间之上,不占布局空间 */
 .rollback {
-  font-size: 12px; color: var(--text-dim); flex: none;
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  font-size: 12px; color: var(--text-dim);
   padding: 1px 5px; border-radius: 3px;
-  visibility: hidden; /* 悬停才显示,保持布局不跳动 */
+  border: none; background: transparent;
+  visibility: hidden;
 }
-.commit-row:hover .rollback { visibility: visible; }
+.commit-row:hover .rollback { visibility: visible; background: var(--hover); }
 .rollback:hover { background: var(--panel-2); color: var(--text); }
 .rollback:disabled { visibility: hidden; }
 .history-none { padding: 4px 20px 8px; font-size: 12px; color: var(--text-dim); }

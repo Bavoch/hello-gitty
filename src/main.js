@@ -19,6 +19,7 @@ let repo = null;
 let busy = false;
 let pendingPush = false; // 推送流程:等待手动填写提交信息后自动继续推送
 let fetching = false; // 后台 fetch 防重入:定时器与手动刷新共用
+const sectionUserSet = new Set(); // 用户手动切换过的分组:自动收起规则不再覆盖其状态
 let toastTimer = null;
 let shipMode = "idle";    // 合并按钮当前态:commit / push / idle
 let lastShipStatus = null; // 最近一次仓库状态,供按钮在 loading 结束后重建
@@ -247,6 +248,7 @@ function bindEvents() {
   document.querySelectorAll(".section-head").forEach((h) =>
     h.addEventListener("click", () => {
       const sec = h.closest(".section");
+      sectionUserSet.add(sec.id); // 用户手动改过:后续刷新不再套用默认收起规则
       sec.classList.toggle("collapsed");
       $(h.dataset.target).classList.toggle("hidden");
     })
@@ -673,7 +675,7 @@ function commitRow(c, headHash) {
   li.className = "commit-row";
   const isHead = headHash && c.hash === headHash;
 
-  // 主行:圆点 + hash + HEAD + message + 归属/时间 + 回退
+  // 主行:圆点 + HEAD + message + 归属/时间 + 回退(默认不显示 ID)
   const main = document.createElement("div");
   main.className = "commit-main";
 
@@ -681,11 +683,6 @@ function commitRow(c, headHash) {
   caret.className = "commit-caret" + (isHead ? " head" : "");
   caret.innerHTML = '<svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   main.appendChild(caret);
-
-  const hash = document.createElement("span");
-  hash.className = "commit-hash" + (isHead ? " is-head" : "");
-  hash.textContent = c.short;
-  main.appendChild(hash);
 
   if (isHead) {
     const tag = document.createElement("span");
@@ -701,23 +698,24 @@ function commitRow(c, headHash) {
 
   const meta = document.createElement("span");
   meta.className = "commit-meta";
+  // 双槽位固定渲染:本地恒在左、远程恒在右;缺失的槽用 visibility:hidden 占位,
+  // 保证所有行图标都在同一竖线,单图标行不位移
   const loci = document.createElement("span");
   loci.className = "commit-loci";
-  if (c.local) {
-    const s = document.createElement("span");
-    s.className = "loci-local";
-    s.title = "本地分支";
-    s.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>';
-    loci.appendChild(s);
-  }
-  if (c.remote) {
-    const s = document.createElement("span");
-    s.className = "loci-remote";
-    s.title = "远程分支";
-    s.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
-    loci.appendChild(s);
-  }
+  const loc = document.createElement("span");
+  loc.className = "loci-local";
+  loc.title = "本地分支";
+  loc.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>';
+  if (!c.local) loc.classList.add("none");
+  loci.appendChild(loc);
+  const rem = document.createElement("span");
+  rem.className = "loci-remote";
+  rem.title = "远程分支";
+  rem.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
+  if (!c.remote) rem.classList.add("none");
+  loci.appendChild(rem);
   const time = document.createElement("span");
+  time.className = "commit-time";
   time.textContent = relTimeShort(c.timestamp);
   time.title = relTime(c.timestamp);
   meta.append(loci, time);
@@ -897,12 +895,18 @@ function showPanel(st) {
   renderList("staged-list", st.staged, "staged", $("staged-count"));
   renderList("unstaged-list", [...st.unstaged, ...st.untracked], "unstaged", $("unstaged-count"));
 
+  // 列表为空时禁用对应整组操作按钮:取消全部暂存←暂存数;取消修改/全部暂存←更改数
+  $("btn-unstage-all").disabled = st.staged.length === 0;
+  $("btn-discard-all").disabled = st.unstaged.length + st.untracked.length === 0;
+  $("btn-stage-all").disabled = st.unstaged.length + st.untracked.length === 0;
+
   $("sec-conflicts").classList.toggle("hidden", st.conflicts.length === 0);
   $("btn-ai-resolve").disabled = st.conflicts.length === 0;
-  // 分组默认展开/收起:历史始终收起;暂存/更改按是否有内容决定
-  setSectionOpen("sec-staged", "staged-list", st.staged.length > 0);
-  setSectionOpen("sec-unstaged", "unstaged-list", st.unstaged.length + st.untracked.length > 0);
-  setSectionOpen("sec-history", "history-container", false);
+  // 分组默认展开/收起:历史始终收起;暂存/更改按是否有内容决定。
+  // 仅作为默认展示规则——用户手动切换过的分组保持其状态,刷新不覆盖。
+  if (!sectionUserSet.has("sec-staged")) setSectionOpen("sec-staged", "staged-list", st.staged.length > 0);
+  if (!sectionUserSet.has("sec-unstaged")) setSectionOpen("sec-unstaged", "unstaged-list", st.unstaged.length + st.untracked.length > 0);
+  if (!sectionUserSet.has("sec-history")) setSectionOpen("sec-history", "history-container", false);
   // 右侧面板显示当前分支
   $("branch-name").textContent = st.detached ? "（分离）" : (st.branch || "（无分支）");
   $("branch-name").title = st.branch || "";
