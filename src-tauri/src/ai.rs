@@ -1,4 +1,5 @@
 use crate::git;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -159,7 +160,8 @@ fn clean_markdown(s: String) -> String {
     s.to_string()
 }
 
-pub async fn generate_commit_message(cfg: &AiConfig, repo: &str) -> Result<String, String> {
+/// 构建提交信息的 (system, user) 提示词:暂存差异 + 近期提交参考 + 常规提交预设 + 用户额外要求
+fn build_commit_prompt(cfg: &AiConfig, repo: &str) -> Result<(String, String), String> {
     // 提交语义:只提交已暂存内容,AI 信息基于暂存差异
     let diff = git::diff_for_ai(repo, true)?;
     let log = git::recent_log(repo, 8);
@@ -182,12 +184,91 @@ pub async fn generate_commit_message(cfg: &AiConfig, repo: &str) -> Result<Strin
         )
     };
     let user = render_template(&p.user_template, &diff, &log_hint, &lang);
+    Ok((system, user))
+}
 
+pub async fn generate_commit_message(cfg: &AiConfig, repo: &str) -> Result<String, String> {
+    let (system, user) = build_commit_prompt(cfg, repo)?;
     let msg = chat(cfg, &system, &user).await?;
     if msg.is_empty() {
         return Err("AI 未生成提交信息".into());
     }
     Ok(msg)
+}
+
+/// 流式生成提交信息:逐 token 经 on_delta 回调推送已累积的全文,最终返回(已去围栏)全文。
+/// on_delta 收到的是当前累积的完整文本,前端可直接整体回填,避免增量拼接。
+pub async fn generate_commit_message_stream(
+    cfg: &AiConfig,
+    repo: &str,
+    on_delta: impl Fn(&str) + Send + Sync + 'static,
+) -> Result<String, String> {
+    if cfg.api_key.trim().is_empty() {
+        return Err("尚未配置 AI API Key，请点击右上角设置完成配置".into());
+    }
+    let (system, user) = build_commit_prompt(cfg, repo)?;
+    let base = cfg.base_url.trim().trim_end_matches('/');
+    let url = format!("{base}/chat/completions");
+    let client = reqwest::Client::new();
+    let body = serde_json::json!({
+        "model": cfg.model,
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user }
+        ],
+        "temperature": 0.3,
+        "stream": true
+    });
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", cfg.api_key.trim()))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求 AI 服务失败： {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        // 流式接口出错时 body 仍是普通 JSON 错误
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("AI 服务返回错误（{status}）： {text}"));
+    }
+
+    // SSE 流式解析:按字节块读入行缓冲,提取 `data: {...}` 中的 choices[0].delta.content
+    let mut stream = resp.bytes_stream();
+    let mut buf = String::new();
+    let mut full = String::new();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("读取 AI 流式响应失败： {e}"))?;
+        buf.push_str(std::str::from_utf8(bytes.as_ref()).map_err(|_| "AI 响应含非法 UTF-8".to_string())?);
+        // 处理缓冲里所有完整行
+        while let Some(nl) = buf.find('\n') {
+            let line: String = buf.drain(..=nl).collect();
+            let line = line.trim();
+            if line.is_empty() || !line.starts_with("data:") {
+                continue;
+            }
+            let data = line["data:".len()..].trim();
+            if data == "[DONE]" {
+                let result = clean_markdown(full.clone());
+                on_delta(&result);
+                return Ok(result);
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                if let Some(delta) = v.pointer("/choices/0/delta/content").and_then(|c| c.as_str()) {
+                    full.push_str(delta);
+                    on_delta(&full);
+                }
+            }
+        }
+    }
+    // 流自然结束(未收到 [DONE])— 兜底返回累积内容
+    if full.trim().is_empty() {
+        return Err("AI 未生成提交信息".into());
+    }
+    let result = clean_markdown(full);
+    on_delta(&result);
+    Ok(result)
 }
 
 pub async fn resolve_conflict_file(cfg: &AiConfig, repo: &str, path: &str) -> Result<(), String> {

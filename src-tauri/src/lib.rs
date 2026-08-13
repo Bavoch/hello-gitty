@@ -719,6 +719,20 @@ async fn ai_commit_message(settings: AiConfig, repo: String) -> Result<String, S
     ai::generate_commit_message(&settings, &repo).await
 }
 
+/// 流式生成提交信息:每收到一段就经 commit-stream 事件推送当前累积全文,返回最终全文
+#[tauri::command]
+async fn ai_commit_message_stream(
+    app: tauri::AppHandle,
+    settings: AiConfig,
+    repo: String,
+) -> Result<String, String> {
+    let handle = app.clone();
+    ai::generate_commit_message_stream(&settings, &repo, move |text| {
+        let _ = handle.emit("commit-stream", serde_json::json!({ "text": text }));
+    })
+    .await
+}
+
 #[tauri::command]
 fn ai_presets() -> Vec<ai::PromptPreset> {
     ai::presets()
@@ -789,6 +803,7 @@ pub fn run() {
             git_branches,
             git_checkout,
             ai_commit_message,
+            ai_commit_message_stream,
             ai_presets,
             ai_resolve_file,
             ai_resolve_conflicts,

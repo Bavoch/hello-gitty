@@ -31,7 +31,7 @@ body {
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.5 -apple-system, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font: 14px/1.5 -apple-system, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
   overflow: hidden;
   user-select: none;
 }
@@ -96,15 +96,15 @@ select option { background: #3c3c3c; color: var(--text); }
 .proj-avatar {
   width: 24px; height: 24px; border-radius: 5px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; user-select: none;
+  font-size: 13px; font-weight: 700; user-select: none;
   border: 1px solid #ffffff1f;
 }
 .proj-name {
-  font-size: 13.5px; font-weight: 600; color: var(--text-head);
+  font-size: 14.5px; font-weight: 600; color: var(--text-head);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .proj-path {
-  font-size: 11px; color: var(--text-dim);
+  font-size: 12px; color: var(--text-dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -114,12 +114,12 @@ select option { background: #3c3c3c; color: var(--text); }
   padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--border);
 }
 /* 工具栏按钮角标定位基点 */
-#btn-commit, #btn-push, #btn-pull { position: relative; }
+#btn-ship, #btn-pull { position: relative; }
 .btn-count {
   position: absolute; top: -3px; right: -4px;
   min-width: 14px; height: 14px; padding: 0 3px;
   border-radius: 7px;
-  font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
+  font-size: 10px; font-weight: 700; line-height: 14px; text-align: center;
   pointer-events: none;
 }
 .btn-count.push { background: var(--blue); color: #1e1e1e; }
@@ -131,10 +131,13 @@ select option { background: #3c3c3c; color: var(--text); }
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: 4px;
   background: transparent; border: 1px solid var(--border); color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
 }
 .tool-btn svg { flex: none; }
+/* 合并按钮的图标包在 span 里,需 inline-flex 居中,否则 SVG 贴文本基线偏上 */
+#ship-icon { display: inline-flex; align-items: center; }
 .tool-btn:hover:not(:disabled) { background: var(--hover-strong); }
+.tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 /* 主操作:主题色实心按钮 */
 .tool-btn.primary {
   background: var(--accent); border-color: var(--accent); color: #fff;
@@ -155,13 +158,13 @@ select option { background: #3c3c3c; color: var(--text); }
 }
 
 /* 分支切换 chip */
-.branch-chip { font-family: var(--mono); font-size: 12px; }
+.branch-chip { font-family: var(--mono); font-size: 13px; }
 .branch-chip .caret-svg { opacity: .6; }
 .branch-chip #branch-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 分支切换弹窗(下拉面板内部项) */
 .branch-group-title {
-  font-size: 11px; color: var(--text-dim); margin-bottom: 4px;
+  font-size: 12px; color: var(--text-dim); margin-bottom: 4px;
   display: flex; align-items: center; gap: 6px;
 }
 .branch-group-title::before {
@@ -171,7 +174,7 @@ select option { background: #3c3c3c; color: var(--text); }
 .branch-group { display: flex; flex-direction: column; }
 .branch-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 5px 8px; border-radius: 4px; font-size: 12px; color: var(--text);
+  padding: 5px 8px; border-radius: 4px; font-size: 13px; color: var(--text);
   text-align: left;
 }
 .branch-item:hover { background: var(--hover-strong); }
@@ -179,14 +182,14 @@ select option { background: #3c3c3c; color: var(--text); }
 .branch-mark { width: 14px; flex: none; display: flex; align-items: center; justify-content: center; color: var(--text-dim); }
 .branch-item.current .branch-mark { color: var(--accent); }
 .branch-label { flex: 1; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.branch-none { padding: 4px 8px; font-size: 11px; color: var(--text-dim); }
+.branch-none { padding: 4px 8px; font-size: 12px; color: var(--text-dim); }
 
 /* 分支下拉面板(轻量,锚定在分支按钮下方) */
 .branch-wrap { position: relative; }
 /* 分支菜单加载/失败占位:居中显示 */
 .branch-loading {
   display: flex; align-items: center; justify-content: center;
-  min-height: 120px; color: var(--text-dim); font-size: 12px;
+  min-height: 120px; color: var(--text-dim); font-size: 13px;
 }
 .branch-menu {
   position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
@@ -195,6 +198,29 @@ select option { background: #3c3c3c; color: var(--text); }
   padding: 6px; box-shadow: 0 4px 16px #00000066;
   display: flex; flex-direction: column; gap: 8px;
 }
+
+/* 提交按钮就地弹窗(流式生成提交信息) */
+.ship-wrap { position: relative; display: inline-flex; }
+.commit-pop {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 60;
+  width: 340px; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; box-shadow: 0 8px 24px #00000088;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.commit-pop-head { display: flex; align-items: center; gap: 8px; }
+.commit-pop-title { flex: 1; font-size: 13px; color: var(--text-dim); }
+.commit-pop-x {
+  width: 20px; height: 20px; padding: 0; border: none; background: transparent;
+  color: var(--text-dim); font-size: 17px; line-height: 1; cursor: pointer; border-radius: 4px;
+}
+.commit-pop-x:hover { background: var(--hover); color: var(--text); }
+.commit-stream-text {
+  width: 100%; resize: vertical; font-family: var(--mono); font-size: 13px;
+  line-height: 1.6; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 5px; padding: 8px; box-sizing: border-box;
+}
+.commit-pop-actions { display: flex; align-items: center; gap: 6px; }
+.commit-pop-actions .spacer { flex: 1; }
 
 /* ===== 主区 ===== */
 #workspace { flex: 1; display: flex; min-height: 0; }
@@ -207,6 +233,7 @@ select option { background: #3c3c3c; color: var(--text); }
   display: flex; flex-direction: column; min-height: 0;
   min-width: 48px; max-width: 420px; /* 最小即简洁轨道宽度,拖拽可直达,模式由宽度自动判定 */
   position: relative; /* 拖拽竖线的定位锚点 */
+  user-select: none; /* 侧栏纯交互区,禁用文本选中(含拖拽排序时) */
 }
 /* 拖拽竖线覆盖在侧栏右缘上(绝对定位),不占布局宽度;透明背景不遮挡内容区左边框;
    z-index 30:高于全部内容(分组标题等),但低于模态遮罩(z-50),弹窗打开时不可见也不可拖 */
@@ -223,7 +250,7 @@ select option { background: #3c3c3c; color: var(--text); }
 body.resizing { cursor: col-resize; user-select: none; }
 .sidebar-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 10px 6px; font-size: 11px; text-transform: uppercase;
+  padding: 8px 10px 6px; font-size: 12px; text-transform: uppercase;
   letter-spacing: .4px; color: var(--text-dim);
 }
 /* 侧栏简洁展示:仅图标轨道,左右边距与展开时一致(10px) */
@@ -264,19 +291,19 @@ body.resizing { cursor: col-resize; user-select: none; }
 .repo-avatar {
   width: 24px; height: 24px; border-radius: 5px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; user-select: none;
+  font-size: 13px; font-weight: 700; user-select: none;
   border: 1px solid #ffffff1f; /* 弱边框:低透明度白,暗色主题下贴边高亮 */
 }
 .repo-info { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .repo-name {
-  font-size: 12px; color: var(--text); overflow: hidden;
+  font-size: 13px; color: var(--text); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
 .repo-meta {
-  font-size: 10.5px; color: var(--text-dim); font-family: var(--mono);
+  font-size: 11.5px; color: var(--text-dim); font-family: var(--mono);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.sidebar-empty { padding: 8px 10px; font-size: 11px; color: var(--text-dim); }
+.sidebar-empty { padding: 8px 10px; font-size: 12px; color: var(--text-dim); }
 .sidebar-footer {
   display: flex; align-items: center; gap: 2px;
   padding: 6px 8px; border-top: 1px solid var(--border); margin-top: auto;
@@ -287,7 +314,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   gap: 10px; color: var(--text-dim); padding: 0 30px; text-align: center;
 }
 #empty-state h2 { color: var(--text-head); font-weight: 500; }
-#empty-state p { font-size: 12px; }
+#empty-state p { font-size: 13px; }
 #empty-state code { font-family: var(--mono); background: var(--panel-2); padding: 1px 5px; border-radius: 3px; }
 .empty-actions { display: flex; gap: 8px; margin-top: 6px; }
 
@@ -298,7 +325,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .section-head {
   display: flex; align-items: center; gap: 6px; width: 100%;
   padding: 6px 12px; background: var(--panel); color: var(--text-head);
-  font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
+  font-size: 12px; text-transform: uppercase; letter-spacing: .4px;
 }
 .section-head:hover { background: var(--hover); }
 .caret {
@@ -307,7 +334,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   transition: transform .12s ease;
 }
 .section.collapsed .caret { transform: rotate(-90deg); }
-.count { color: var(--text-dim); font-size: 11px; letter-spacing: 0; }
+.count { color: var(--text-dim); font-size: 12px; letter-spacing: 0; }
 .count::before { content: "("; }
 .count::after { content: ")"; }
 /* 暂存/更改分组标题文字配色(暂存=蓝,更改=橙),替代原有字母徽标 */
@@ -316,7 +343,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .section-actions { display: none; padding: 4px 12px 6px; background: var(--panel); }
 .section.has-conflicts .section-actions { display: block; }
 .mini-btn {
-  font-size: 11px; padding: 2px 8px; border-radius: 3px;
+  font-size: 12px; padding: 2px 8px; border-radius: 3px;
   border: 1px solid var(--border); color: var(--text-dim);
 }
 .mini-btn:hover { color: var(--text); background: var(--hover); }
@@ -325,14 +352,14 @@ body.resizing { cursor: col-resize; user-select: none; }
 
 .badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; font-size: 10px; font-weight: 700; border-radius: 3px; flex: none;
+  width: 16px; height: 16px; font-size: 11px; font-weight: 700; border-radius: 3px; flex: none;
 }
 .badge-h { background: #6366f133; color: #a5a8ff; }
 /* 状态字母徽标(A/M/C):右侧分组标题使用 */
 .ch-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 16px; height: 16px; padding: 0 3px;
-  font-size: 10px; font-weight: 700; font-family: var(--mono); border-radius: 3px; flex: none;
+  font-size: 11px; font-weight: 700; font-family: var(--mono); border-radius: 3px; flex: none;
 }
 .ch-a { background: #89d18533; color: var(--green); }
 .ch-m { background: #dcdcaa33; color: var(--yellow); }
@@ -348,7 +375,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .file-row.conflict { padding-left: 42px; }
 .file-row:hover { background: var(--hover); }
 .file-row .st {
-  width: 14px; height: 14px; font-size: 10px; font-weight: 700;
+  width: 14px; height: 14px; font-size: 11px; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; flex: none;
 }
 .st-A, .st-? { background: #89d18533; color: var(--green); }
@@ -357,13 +384,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .st-R { background: #75beff33; color: var(--blue); }
 .st-C { background: #f4877133; color: var(--red); }
 .file-row .path {
-  flex: 1; font-family: var(--mono); font-size: 12px;
+  flex: 1; font-family: var(--mono); font-size: 13px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .file-row .orig { color: var(--text-dim); }
 .row-actions { display: none; align-items: center; gap: 6px; }
 .file-row:hover .row-actions { display: inline-flex; }
-.row-actions button { font-size: 11px; line-height: 1.2; color: var(--text-dim); padding: 1px 5px; border: none; border-radius: 3px; }
+.row-actions button { font-size: 12px; line-height: 1.2; color: var(--text-dim); padding: 1px 5px; border: none; border-radius: 3px; }
 .row-actions button:hover { background: var(--panel-2); color: var(--text); }
 .row-actions .resolve { color: var(--orange); }
 .row-actions .resolve:hover { background: #cc783233; }
@@ -371,7 +398,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* ===== 忙碌指示 ===== */
 .busy-ind {
   display: inline-flex; align-items: center; gap: 6px;
-  margin-left: auto; font-size: 12px; color: var(--text-dim);
+  margin-left: auto; font-size: 13px; color: var(--text-dim);
 }
 
 /* ===== 更多下拉菜单 ===== */
@@ -385,7 +412,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .more-menu button {
   display: flex; align-items: center; gap: 8px;
   text-align: left; padding: 6px 10px; border-radius: 4px;
-  font-size: 12px; color: var(--text);
+  font-size: 13px; color: var(--text);
 }
 .more-menu button svg { flex: none; opacity: .65; }
 .more-menu button:hover { background: var(--hover-strong); color: var(--text); }
@@ -405,29 +432,39 @@ body.resizing { cursor: col-resize; user-select: none; }
 .history-list { list-style: none; }
 .history-list:empty { display: none; }
 .commit-row {
-  display: flex; align-items: center; gap: 8px; min-width: 0;
-  padding: 4px 12px 4px 20px; cursor: default;
+  display: flex; flex-direction: column; min-width: 0;
+  padding: 4px 12px 4px 20px; cursor: pointer;
 }
+.commit-main { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
+/* 点击行展开的详情:作者 · 完整时间 · 完整 hash */
+.commit-detail {
+  display: none; padding: 3px 0 6px; gap: 6px; align-items: center;
+  font-size: 11px; color: var(--text-dim); user-select: text;
+}
+.commit-row.expanded .commit-detail { display: inline-flex; }
+.commit-detail .cd-hash { font-family: var(--mono); }
 .commit-row:hover { background: var(--hover); }
-.commit-dot {
-  width: 7px; height: 7px; border-radius: 50%; flex: none;
-  background: var(--text-dim);
+/* 展开收起箭头:收起右指 ▸,展开下指 ▼(随 .expanded 旋转) */
+.commit-caret {
+  flex: none; display: inline-flex; align-items: center; color: var(--text-dim);
+  transform: rotate(-90deg); transition: transform .12s ease;
 }
-.commit-dot.head { background: var(--accent); }
+.commit-row.expanded .commit-caret { transform: rotate(0deg); }
+.commit-caret.head { color: var(--accent); }
 .commit-hash {
-  font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); flex: none;
+  font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); flex: none;
 }
 .commit-hash.is-head { color: var(--accent); font-weight: 600; }
 .h-head-tag {
-  font-size: 9px; padding: 0 4px; border-radius: 3px; flex: none;
+  font-size: 10px; padding: 0 4px; border-radius: 3px; flex: none;
   background: #6366f133; color: #a5a8ff;
 }
 .commit-msg {
-  flex: 1; font-size: 11.5px; color: var(--text); min-width: 0;
+  flex: 1; font-size: 12.5px; color: var(--text); min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text;
 }
 .commit-meta {
-  font-size: 10px; color: var(--text-dim); flex: none; white-space: nowrap;
+  font-size: 11px; color: var(--text-dim); flex: none; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 5px;
 }
 /* 本地(分支)= 蓝色,远程(云朵)= 紫色 */
@@ -435,28 +472,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 .commit-loci .loci-local { display: inline-flex; color: var(--blue); }
 .commit-loci .loci-remote { display: inline-flex; color: #c792ea; }
 .rollback {
-  font-size: 11px; color: var(--text-dim); flex: none;
+  font-size: 12px; color: var(--text-dim); flex: none;
   padding: 1px 5px; border-radius: 3px;
   visibility: hidden; /* 悬停才显示,保持布局不跳动 */
 }
 .commit-row:hover .rollback { visibility: visible; }
 .rollback:hover { background: var(--panel-2); color: var(--text); }
 .rollback:disabled { visibility: hidden; }
-.history-none { padding: 4px 20px 8px; font-size: 11px; color: var(--text-dim); }
+.history-none { padding: 4px 20px 8px; font-size: 12px; color: var(--text-dim); }
 
-/* git 历史悬停说明 */
-.commit-tip {
-  position: fixed; z-index: 200;
-  max-width: 380px; min-width: 220px;
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
-  padding: 9px 12px;
-  box-shadow: 0 8px 24px #00000088;
-  pointer-events: none;
-  display: flex; flex-direction: column; gap: 4px;
-}
-.commit-tip .ct-msg { font-size: 12px; color: var(--text); line-height: 1.45; word-break: break-word; }
-.commit-tip .ct-meta { font-size: 10.5px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.commit-tip .ct-sep { opacity: .5; }
 .mono { font-family: var(--mono); color: var(--accent); }
 
 /* ===== 弹窗 ===== */
@@ -469,13 +493,13 @@ body.resizing { cursor: col-resize; user-select: none; }
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
   padding: 18px; display: flex; flex-direction: column; gap: 12px;
 }
-.dialog h3 { color: #e8e8e8; font-size: 14px; }
+.dialog h3 { color: #e8e8e8; font-size: 15px; }
 
 /* 设置弹窗:顶部标题栏 + 左侧分组导航 */
 .settings-dialog { padding: 0; gap: 0; overflow: hidden; width: min(560px, 94vw); height: min(440px, 80vh); }
 .settings-title {
   flex: none; padding: 12px 18px;
-  font-size: 13px; font-weight: 600; color: var(--text-head);
+  font-size: 14px; font-weight: 600; color: var(--text-head);
   border-bottom: 1px solid var(--border);
 }
 .settings-main { display: flex; flex: 1; min-height: 0; }
@@ -487,18 +511,18 @@ body.resizing { cursor: col-resize; user-select: none; }
 .settings-nav-item {
   display: flex; align-items: center; gap: 12px;
   padding: 7px 10px; border-radius: 5px;
-  font-size: 12.5px; line-height: 1; color: var(--text-dim); cursor: pointer;
+  font-size: 13.5px; line-height: 1; color: var(--text-dim); cursor: pointer;
 }
 .settings-nav-item:hover { background: var(--hover); color: var(--text); }
 .settings-nav-item.active { background: var(--hover-strong); color: var(--text); }
 .settings-body { flex: 1; padding: 18px; overflow-y: auto; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .settings-tab { display: flex; flex-direction: column; gap: 12px; }
 .settings-dialog .dlg-actions { padding: 12px 18px; border-top: 1px solid var(--border); flex: none; }
-.dlg-hint { font-size: 12px; color: var(--text-dim); }
-#commit-msg { min-height: 120px; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
-#gitignore-content { width: 100%; min-height: 320px; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+.dlg-hint { font-size: 13px; color: var(--text-dim); }
+#commit-msg { min-height: 120px; resize: vertical; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
+#gitignore-content { width: 100%; min-height: 320px; resize: vertical; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
 .ignore-options { display: flex; flex-direction: column; gap: 4px; }
-.ignore-opt { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text); cursor: pointer; padding: 5px 8px; border-radius: 4px; }
+.ignore-opt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; padding: 5px 8px; border-radius: 4px; }
 .ignore-opt:hover { background: var(--hover); }
 .ignore-opt input { margin: 0; }
 .ignore-opt code { font-family: var(--mono); color: var(--accent); }
@@ -509,7 +533,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   width: min(720px, 94vw); height: 80vh; overflow: hidden;
 }
 .diff-content {
-  font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.6;
   flex: 1; min-height: 0; overflow-y: auto;
   background: var(--bg); border: 1px solid var(--border); border-radius: 6px; margin: 0;
 }
@@ -531,9 +555,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   min-height: 100%; padding: 8px 12px;
 }
 .dlg-actions { display: flex; align-items: center; gap: 8px; }
-.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-head); }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-head); }
 
-#set-custom-prompt { min-height: 72px; resize: vertical; font-family: var(--mono); font-size: 11.5px; line-height: 1.6; }
+#set-custom-prompt { min-height: 72px; resize: vertical; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; }
 
 .progress-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
@@ -543,7 +567,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   position: fixed; bottom: 32px; left: 50%;
   transform: translate(-50%, 12px);
   background: #303032; border-radius: 6px;
-  padding: 6px 12px; font-size: 12px; color: #ededed;
+  padding: 6px 12px; font-size: 13px; color: #ededed;
   max-width: 80vw; white-space: pre-wrap; word-break: break-word;
   box-shadow: 0 4px 12px #00000066;
   opacity: 0; pointer-events: none;

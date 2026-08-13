@@ -6,6 +6,9 @@ const $ = (id) => document.getElementById(id);
 
 const DEFAULT_AI = { base_url: "https://api.deepseek.com", api_key: "", model: "deepseek-v4-flash", lang: "中文", commit_mode: "auto", custom_prompt: "" };
 const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" };
+// 合并按钮两态图标:提交(对勾)/推送(上传)
+const SHIP_CHECK = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const SHIP_PUSH = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>';
 
 const SIDEBAR_MIN = 48, SIDEBAR_MAX = 420; // 侧栏拖拽宽度范围
 const SIDEBAR_COMPACT_MAX = 96; // 简洁展示的宽度上限(含);更宽自动切全面展示
@@ -16,6 +19,11 @@ let repo = null;
 let busy = false;
 let pendingPush = false; // 推送流程:等待手动填写提交信息后自动继续推送
 let toastTimer = null;
+let shipMode = "idle";    // 合并按钮当前态:commit / push / idle
+let lastShipStatus = null; // 最近一次仓库状态,供按钮在 loading 结束后重建
+let popState = "idle";     // 提交弹窗态:streaming(生成中) / ready(可编辑确认) / idle(关闭)
+let streamCancelled = false; // 软取消:流式中忽略后续事件、不自动提交
+let streamBusy = false;    // 流式 invoke 进行中(含已软取消但后端未返回),用于阻塞重复触发
 
 init();
 
@@ -45,6 +53,10 @@ async function init() {
     $("conflict-current").textContent = `(${p.done}/${p.total}) ${p.path}`;
     $("conflict-fill").style.width = `${Math.round((p.done / p.total) * 100)}%`;
   });
+  // 提交信息流式回填:弹窗打开且未软取消时,用后端推送的累积全文整体写入文本框
+  listen("commit-stream", (e) => {
+    if (popState !== "idle" && !streamCancelled) $("commit-stream-text").value = e.payload.text;
+  });
 
   setupDragDrop();
   await loadRepos();
@@ -70,8 +82,15 @@ function bindEvents() {
   $("btn-stage-all").addEventListener("click", () => stageAll(true));
   $("btn-unstage-all").addEventListener("click", () => stageAll(false));
   $("btn-discard-all").addEventListener("click", discardAll);
-  $("btn-commit").addEventListener("click", () => onCommit($("btn-commit")));
-  $("btn-push").addEventListener("click", () => pushPull("push"));
+  $("btn-ship").addEventListener("click", async () => {
+    if (shipMode === "commit") onCommit($("btn-ship"));
+    else if (shipMode === "push") { await doPush(); await refresh(); }
+  });
+  // 提交流式弹窗按钮
+  $("commit-pop-close").addEventListener("click", cancelCommitPop);
+  $("commit-pop-cancel").addEventListener("click", cancelCommitPop);
+  $("commit-pop-regen").addEventListener("click", () => streamCommitMessage());
+  $("commit-pop-ok").addEventListener("click", () => commitWithMessage($("commit-stream-text").value));
   $("btn-pull").addEventListener("click", () => pushPull("pull"));
   $("btn-branch").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -349,6 +368,7 @@ function onRepoDragMove(e) {
     dragPath = dragState.path;
     dragState.li.classList.add("dragging");
   }
+  e.preventDefault(); // 抑制拖动过程中浏览器的默认文本选中
   clearDropIndicators();
   const target = repoItemAtY(e.clientY);
   if (target && target !== dragState.li) {
@@ -629,35 +649,36 @@ function renderHistory(h, branch) {
 function commitRow(c, headHash) {
   const li = document.createElement("li");
   li.className = "commit-row";
-  li.dataset.author = c.author;
-  li.dataset.subject = c.subject;
-  li.dataset.time = relTime(c.timestamp);
   const isHead = headHash && c.hash === headHash;
 
-  const dot = document.createElement("span");
-  dot.className = "commit-dot" + (isHead ? " head" : "");
-  li.appendChild(dot);
+  // 主行:圆点 + hash + HEAD + message + 归属/时间 + 回退
+  const main = document.createElement("div");
+  main.className = "commit-main";
+
+  const caret = document.createElement("span");
+  caret.className = "commit-caret" + (isHead ? " head" : "");
+  caret.innerHTML = '<svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  main.appendChild(caret);
 
   const hash = document.createElement("span");
   hash.className = "commit-hash" + (isHead ? " is-head" : "");
   hash.textContent = c.short;
-  li.appendChild(hash);
+  main.appendChild(hash);
 
   if (isHead) {
     const tag = document.createElement("span");
     tag.className = "h-head-tag";
     tag.textContent = "HEAD";
-    li.appendChild(tag);
+    main.appendChild(tag);
   }
 
   const msg = document.createElement("span");
   msg.className = "commit-msg";
   msg.textContent = c.subject;
-  li.appendChild(msg);
+  main.appendChild(msg);
 
   const meta = document.createElement("span");
   meta.className = "commit-meta";
-  // 左侧图标:本地分支/远程分支归属;右侧:相对时间(提交人在悬停提示中可见)
   const loci = document.createElement("span");
   loci.className = "commit-loci";
   if (c.local) {
@@ -678,7 +699,7 @@ function commitRow(c, headHash) {
   time.textContent = relTimeShort(c.timestamp);
   time.title = relTime(c.timestamp);
   meta.append(loci, time);
-  li.appendChild(meta);
+  main.appendChild(meta);
 
   const rb = document.createElement("button");
   rb.className = "rollback";
@@ -689,30 +710,21 @@ function commitRow(c, headHash) {
     ev.stopPropagation();
     askReset(c.hash, c.short);
   });
-  li.appendChild(rb);
-  li.addEventListener("mouseenter", () => showCommitTip(li));
-  li.addEventListener("mouseleave", hideCommitTip);
+  main.appendChild(rb);
+  li.appendChild(main);
+
+  // 展开后详情:作者 · 完整相对时间 · 完整 hash
+  const detail = document.createElement("div");
+  detail.className = "commit-detail";
+  const part = (txt, cls) => { const s = document.createElement("span"); if (cls) s.className = cls; s.textContent = txt; return s; };
+  detail.append(part(c.author), part("·"), part(relTime(c.timestamp)), part("·"), part(c.hash, "cd-hash"));
+  li.appendChild(detail);
+
+  // 点击行(回退按钮已 stopPropagation)切换展开/收起
+  li.addEventListener("click", () => li.classList.toggle("expanded"));
   return li;
 }
 
-// git 历史悬停说明(自定义浮层,避免系统 title)
-function showCommitTip(row) {
-  const t = $("commit-tip");
-  t.innerHTML = "";
-  const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; e.textContent = txt; return e; };
-  const meta = el("div", "ct-meta");
-  meta.append(el("span", "", row.dataset.author), el("span", "ct-sep", "·"), el("span", "", row.dataset.time));
-  t.append(el("div", "ct-msg", row.dataset.subject), meta);
-  t.classList.remove("hidden");
-  const rr = row.getBoundingClientRect();
-  const tr = t.getBoundingClientRect();
-  let top = rr.top - tr.height - 8;
-  if (top < 8) top = rr.bottom + 8;
-  t.style.top = top + "px";
-  // 相对行首右移 16px,让提示面板错开行内容
-  t.style.left = Math.max(8, Math.min(rr.left + 16, window.innerWidth - tr.width - 8)) + "px";
-}
-function hideCommitTip() { $("commit-tip").classList.add("hidden"); }
 
 // 本地 + 远程按 hash 去重合并,按时间倒序;同时标记每条提交的本地/远程归属
 function mergeCommits(local, remote) {
@@ -796,8 +808,14 @@ function showEmpty(showInit) {
   }
   $("branch-name").textContent = "—";
   $("branch-name").title = "";
-  if ($("commit-count")) $("commit-count").classList.add("hidden");
-  if ($("push-count")) $("push-count").classList.add("hidden");
+  // 无仓库:合并按钮复位为禁用,idle 态
+  shipMode = "idle";
+  lastShipStatus = null;
+  const sb = $("btn-ship");
+  if (sb) {
+    sb.disabled = true;
+    if ($("ship-count")) $("ship-count").className = "btn-count hidden";
+  }
   if ($("pull-count")) $("pull-count").classList.add("hidden");
 }
 
@@ -805,6 +823,47 @@ function showEmpty(showInit) {
 function setSectionOpen(secId, targetId, open) {
   $(secId).classList.toggle("collapsed", !open);
   $(targetId).classList.toggle("hidden", !open);
+}
+
+// 合并的「提交/推送」按钮:有暂存→提交(绿角标),否则有领先提交→推送(蓝角标),否则禁用。
+// 必须先提交(暂存清空、产生领先提交)后才会进入推送态。
+function setShipButton(st) {
+  const btn = $("btn-ship");
+  if (!btn) return;
+  const icon = $("ship-icon"), label = $("ship-label"), count = $("ship-count");
+  // 有任何本地改动(暂存/未暂存/未跟踪)→提交;全部提交完且有领先→推送(对标 VS Code)
+  const pending = st.staged.length + st.unstaged.length + st.untracked.length;
+  if (pending > 0) {
+    shipMode = "commit";
+    icon.innerHTML = SHIP_CHECK;
+    label.textContent = "提交";
+    count.className = "btn-count commit";
+    count.textContent = pending;
+    btn.disabled = false;
+    btn.title = "提交全部本地更改";
+  } else if (st.ahead > 0) {
+    shipMode = "push";
+    icon.innerHTML = SHIP_PUSH;
+    label.textContent = "推送";
+    count.className = "btn-count push";
+    count.textContent = st.ahead;
+    btn.disabled = false;
+    btn.title = "推送本地领先的提交";
+  } else {
+    shipMode = "idle";
+    icon.innerHTML = SHIP_CHECK;
+    label.textContent = "提交";
+    count.className = "btn-count hidden";
+    btn.disabled = true;
+    btn.title = "没有待提交或待推送的内容";
+  }
+  // 可操作时(提交/推送)用主题色主按钮样式,空闲时退回幽灵按钮
+  btn.classList.toggle("primary", shipMode !== "idle");
+}
+
+// 操作完成后的 loading 复位会还原按钮旧 DOM,这里按最新状态重建,避免显示态错乱
+function refreshShipButton() {
+  if (lastShipStatus) setShipButton(lastShipStatus);
 }
 
 function showPanel(st) {
@@ -825,17 +884,10 @@ function showPanel(st) {
   // 右侧面板显示当前分支
   $("branch-name").textContent = st.detached ? "（分离）" : (st.branch || "（无分支）");
   $("branch-name").title = st.branch || "";
-  // 领先/落后提交数徽标:推送按钮显示 ahead,拉取按钮显示 behind
-  // (空值保护:HTML 与 JS 版本错位时不能中断整个刷新)
-  const cc = $("commit-count"), pc = $("push-count"), lc = $("pull-count");
-  if (cc) {
-    cc.classList.toggle("hidden", !(st.staged.length > 0));
-    if (st.staged.length > 0) cc.textContent = st.staged.length;
-  }
-  if (pc) {
-    pc.classList.toggle("hidden", !(st.ahead > 0));
-    if (st.ahead > 0) pc.textContent = st.ahead;
-  }
+  // 合并的提交/推送按钮按状态切换(暂存→提交,否则领先→推送);拉取按钮显示落后数
+  lastShipStatus = st;
+  setShipButton(st);
+  const lc = $("pull-count");
   if (lc) {
     lc.classList.toggle("hidden", !(st.behind > 0));
     if (st.behind > 0) lc.textContent = st.behind;
@@ -1002,35 +1054,101 @@ async function toggleStage(path, unstage) {
 }
 
 async function onCommit(btn) {
-  btn = btn || $("btn-commit");
-  // 提交只针对已暂存内容,不再自动暂存全部
+  btn = btn || $("btn-ship");
+  // 弹窗已开或流式生成进行中时不重复触发
+  if (popState !== "idle" || streamBusy) return;
   const st = await invoke("git_status", { repo });
-  if (st.staged.length === 0) {
-    toast(st.unstaged.length + st.untracked.length > 0
-      ? "没有已暂存的更改，请先点击「全部暂存」"
-      : "没有可提交的更改", false);
+  const total = st.staged.length + st.unstaged.length + st.untracked.length;
+  if (total === 0) { toast("没有可提交的更改", false); return; }
+  try {
+    // 智能提交:有未暂存/未跟踪时先全部暂存,一次性提交完本地所有改动(对标 VS Code)
+    if (st.staged.length < total) await invoke("git_stage_all", { repo });
+    await streamCommitMessage();
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    refreshShipButton();
+  }
+}
+
+/* ===== 提交信息流式就地弹窗 ===== */
+// 打开弹窗:进入生成中态
+function openCommitPop() {
+  popState = "streaming";
+  streamCancelled = false;
+  const ta = $("commit-stream-text");
+  ta.value = "";
+  ta.disabled = true;
+  $("commit-pop-title").textContent = "AI 正在生成提交信息…";
+  $("commit-pop-spin").classList.remove("hidden");
+  $("commit-pop-actions").classList.add("hidden");
+  $("commit-pop").classList.remove("hidden");
+}
+
+function closeCommitPop() {
+  popState = "idle";
+  $("commit-pop").classList.add("hidden");
+}
+
+// 弹窗进入可编辑确认态
+function readyCommitPopForEdit(msg) {
+  const ta = $("commit-stream-text");
+  ta.value = msg;
+  ta.disabled = false;
+  ta.focus();
+  $("commit-pop-actions").classList.remove("hidden");
+  popState = "ready";
+}
+
+// 流式生成:边生成边回填;完成后 auto 模式直接提交,confirm 模式进入可编辑态
+async function streamCommitMessage() {
+  openCommitPop();
+  streamBusy = true;
+  let msg = "";
+  try {
+    msg = await invoke("ai_commit_message_stream", { settings: settings.ai, repo });
+  } catch (e) {
+    if (streamCancelled) return; // 已软取消:静默
+    $("commit-pop-spin").classList.add("hidden");
+    $("commit-pop-title").textContent = "AI 生成失败，可手动填写：";
+    readyCommitPopForEdit("");
+    throw e; // 让调用方 toast 具体错误
+  } finally {
+    streamBusy = false;
+  }
+  if (streamCancelled) return;
+  // 直接提交模式:生成完即提交
+  if (settings.ai.commit_mode === "auto") {
+    await commitWithMessage(msg);
     return;
   }
+  // 确认模式:可编辑 + 操作行
+  $("commit-pop-spin").classList.add("hidden");
+  $("commit-pop-title").textContent = "AI 已生成，可修改后提交";
+  readyCommitPopForEdit(msg);
+}
 
-  let msg = "";
-  setButtonLoading(btn, true, "提交中…");
+// 取消/关闭:流式中软取消(后端继续、前端忽略),否则直接关
+function cancelCommitPop() {
+  if (popState === "streaming") streamCancelled = true;
+  closeCommitPop();
+}
+
+// 用给定信息提交(供 auto 模式与确认按钮复用),成功后刷新并关闭弹窗
+async function commitWithMessage(msg) {
+  if (popState === "idle") return;
+  msg = (msg || "").trim();
+  if (!msg) { toast("提交信息不能为空", false); return; }
+  popState = "idle"; // 阻塞重复触发
   try {
-    msg = await invoke("ai_commit_message", { settings: settings.ai, repo });
-    // 直接提交模式:AI 生成后立即提交
-    if (settings.ai.commit_mode === "auto") {
-      const r = await invoke("git_commit", { repo, message: msg });
-      if (r && r.ok === false) toast(r.output, false);
-      else toast("提交成功", true);
-      await refresh();
-      return;
-    }
-    showCommitDialog(msg, "AI 已生成，可修改后提交");
+    const r = await invoke("git_commit", { repo, message: msg });
+    if (r && r.ok === false) toast(r.output, false);
+    else toast("提交成功", true);
   } catch (e) {
-    // AI 失败(如未配 Key):回退到手动填写确认,保证提交可用
-    showCommitDialog("", "AI 生成失败：" + e + " 请手动填写：");
-  } finally {
-    setButtonLoading(btn, false);
+    toast(String(e), false);
   }
+  closeCommitPop();
+  await refresh();
 }
 
 function showCommitDialog(msg, hint) {
@@ -1057,8 +1175,8 @@ async function doCommit() {
   const msg = $("commit-msg").value.trim();
   if (!msg) { toast("提交信息不能为空", false); return; }
   $("dlg-commit").classList.add("hidden");
-  // 弹窗关闭后,在工具栏提交按钮上体现加载状态
-  setButtonLoading($("btn-commit"), true, "提交中…");
+  // 弹窗关闭后,在合并按钮上体现加载状态
+  setButtonLoading($("btn-ship"), true, "提交中…");
   try {
     const r = await invoke("git_commit", { repo, message: msg });
     if (r && r.ok === false) toast(r.output, false);
@@ -1073,14 +1191,14 @@ async function doCommit() {
   } catch (e) {
     toast(String(e), false);
   } finally {
-    setButtonLoading($("btn-commit"), false);
+    setButtonLoading($("btn-ship"), false);
   }
   await refresh();
 }
 
 // 实际推送(git_push + 授权引导)
 async function doPush() {
-  const btn = $("btn-push");
+  const btn = $("btn-ship");
   setButtonLoading(btn, true, "推送中…");
   try {
     const r = await invoke("git_push", { repo });

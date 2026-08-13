@@ -73,16 +73,28 @@
         </div>
       </div>
       <section id="toolbar">
-        <button id="btn-commit" class="tool-btn">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          提交
-          <span id="commit-count" class="btn-count commit hidden" title="已暂存的文件数"></span>
-        </button>
-        <button id="btn-push" class="tool-btn">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
-          推送
-          <span id="push-count" class="btn-count push hidden" title="本地领先的提交数"></span>
-        </button>
+        <div class="ship-wrap">
+          <button id="btn-ship" class="tool-btn" title="提交" disabled>
+            <span id="ship-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span id="ship-label">提交</span>
+            <span id="ship-count" class="btn-count hidden"></span>
+          </button>
+          <!-- 提交信息流式就地弹窗 -->
+          <div id="commit-pop" class="commit-pop hidden">
+            <div class="commit-pop-head">
+              <span id="commit-pop-title">AI 正在生成提交信息…</span>
+              <span class="spinner commit-pop-spin" id="commit-pop-spin"></span>
+              <button class="commit-pop-x" id="commit-pop-close" title="取消">×</button>
+            </div>
+            <textarea id="commit-stream-text" class="commit-stream-text" rows="6" disabled placeholder="提交信息…"></textarea>
+            <div class="commit-pop-actions hidden" id="commit-pop-actions">
+              <button class="tool-btn" id="commit-pop-regen">重新生成</button>
+              <span class="spacer"></span>
+              <button class="tool-btn" id="commit-pop-cancel">取消</button>
+              <button class="tool-btn primary" id="commit-pop-ok">提交</button>
+            </div>
+          </div>
+        </div>
         <button id="btn-pull" class="tool-btn">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
           拉取
@@ -377,7 +389,6 @@
     </div>
   </div>
   <div id="toast"></div>
-  <div id="commit-tip" class="commit-tip hidden"></div>
 
   <script src="main.js?v=20260813"></script>
 </body>
