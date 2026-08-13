@@ -10,7 +10,7 @@ const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" 
 const SIDEBAR_MIN = 48, SIDEBAR_MAX = 420; // 侧栏拖拽宽度范围
 const SIDEBAR_COMPACT_MAX = 96; // 简洁展示的宽度上限(含);更宽自动切全面展示
 
-let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [] };
+let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [], run_commands: {} };
 let repos = []; // 侧栏仓库摘要列表
 let repo = null;
 let busy = false;
@@ -22,6 +22,9 @@ let lastStatus = null; // 当前仓库最新修改计数(暂存/更改/冲突),�
 let popState = "idle";     // 提交弹窗态:streaming(生成中) / ready(可编辑确认) / idle(关闭)
 let streamCancelled = false; // 软取消:流式中忽略后续事件、不自动提交
 let streamBusy = false;    // 流式 invoke 进行中(含已软取消但后端未返回),用于阻塞重复触发
+// 「运行服务器」:每个仓库一份日志缓冲 + 运行态,跨仓库切换不丢失
+let runLogs = {};   // repo -> [{ cls: "" | "err" | "sys", text }]
+let runState = {};  // repo -> Boolean(是否运行中)
 
 init();
 
@@ -53,7 +56,27 @@ async function init() {
   });
   // 提交信息流式回填:弹窗打开且未软取消时,用后端推送的累积全文整体写入文本框
   listen("commit-stream", (e) => {
-    if (popState !== "idle" && !streamCancelled) $("commit-stream-text").value = e.payload.text;
+    if (popState === "idle" || streamCancelled) return;
+    const ta = $("commit-stream-text");
+    ta.value = e.payload.text;
+    ta.scrollTop = ta.scrollHeight; // 流式输出自动滚到底部,始终展示最新生成内容
+  });
+  // 运行服务器:逐行日志回推(stdout 普通色 / stderr 红色),仅追加当前仓库
+  listen("server-log", (e) => {
+    const p = e.payload;
+    if (!p || p.repo !== repo) return;
+    appendRunLine(p.stream === "err" ? "err" : "", p.line);
+  });
+  // 运行服务器:启停态变更(进程退出时由后端发出),更新按钮并提示
+  listen("server-status", (e) => {
+    const p = e.payload;
+    if (!p) return;
+    runState[p.repo] = !!p.running;
+    if (p.repo === repo) syncRunStatus();
+    // 仅非主动停止(进程自身退出/崩溃,带退出码)时提示;主动停止由 doRunToggle 提示
+    if (!p.running && p.code !== undefined && p.code !== null) {
+      toast(`服务器已停止（退出码 ${p.code}）`, false);
+    }
   });
 
   setupDragDrop();
@@ -64,6 +87,7 @@ async function init() {
   } else {
     showEmpty(false);
   }
+  syncRunPanel(); // 运行面板:回填命令、刷新日志与运行态
   // 定时后台 fetch:远程有新提交时,ahead/behind 徽标与远程历史自动更新
   setInterval(fetchRemote, 60_000);
 }
@@ -92,6 +116,17 @@ function bindEvents() {
   $("commit-pop-ok").addEventListener("click", () => commitWithMessage($("commit-stream-text").value));
   $("btn-pull").addEventListener("click", doPull);
   $("btn-checkpoint").addEventListener("click", createCheckpoint);
+  // 运行服务器
+  $("btn-run").addEventListener("click", doRunToggle);
+  $("btn-run-toggle").addEventListener("click", doRunToggle);
+  $("btn-run-clear").addEventListener("click", () => {
+    if (repo) { runLogs[repo] = []; renderRunLog(); }
+  });
+  $("btn-run-collapse").addEventListener("click", closeRunPanel);
+  // 命令输入:回车/失焦时保存为该仓库的命令(空则清除)
+  const saveCmd = () => saveRunCommand($("run-cmd").value);
+  $("run-cmd").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveCmd(); $("run-cmd").blur(); } });
+  $("run-cmd").addEventListener("blur", saveCmd);
   $("btn-branch").addEventListener("click", (e) => {
     e.stopPropagation();
     const menu = $("branch-menu");
@@ -197,6 +232,12 @@ function bindEvents() {
       const base = content.replace(/\n+$/, "");
       const merged = base + (base && add.length ? "\n" : "") + (add.length ? add.join("\n") + "\n" : "");
       await invoke("gitignore_write", { repo, content: merged });
+      // 让被忽略文件立即从列表消失:已跟踪/已暂存文件仅靠 .gitignore 不会从 git status 消失,
+      // 需先从 index 移除;未跟踪文件则由 .gitignore 直接隐藏(--ignore-unmatch 对未跟踪文件不报错)
+      const ipath = $("dlg-ignore").dataset.path;
+      if (ipath) {
+        try { await invoke("git_untrack_file", { repo, path: ipath }); } catch (_) {}
+      }
       $("dlg-ignore").classList.add("hidden");
       toast(add.length ? "已添加到 .gitignore： " + add.join("、") : "所选规则已存在，无需添加", add.length > 0);
       await refresh();
@@ -536,10 +577,20 @@ async function switchRepo(path) {
   repo = path;
   settings.last_repo = path;
   try { await invoke("repos_set_current", { path }); } catch (_) {}
-  renderRepoList();
+  updateSidebarActive(path); // 只切高亮与滚动,不重建列表(重建会让全部状态行闪烁)
   showRefreshing();
   await refresh();
   fetchRemote(); // 切到新仓库后台核对远程状态
+  syncRunPanel(); // 切到新仓库:回填其运行命令、刷新日志与运行态
+}
+
+// 切换仓库时只更新高亮与滚动,不重建列表;当前项状态行由 refresh 完成后的 updateSidebarCurrent 就地更新
+function updateSidebarActive(path) {
+  for (const li of $("repo-list").children) {
+    li.classList.toggle("active", li.dataset.path === path);
+  }
+  const active = $("repo-list").querySelector(".repo-item.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
 }
 
 async function removeRepo(path) {
@@ -600,14 +651,33 @@ async function refresh() {
   updateSidebarCurrent(st); // 侧栏只就地更新当前项,不做全量扫描
 }
 
-// 切换仓库时立即显示的加载占位:隐藏旧内容,给用户即时反馈
+// 切换仓库的加载占位:延迟 150ms 显示(毫秒级切换不闪 spinner),一旦显示至少停留 250ms(避免抖一下)
+let refreshingTimer = null;
+let refreshingShownAt = 0;
+const REFRESH_DELAY_MS = 150;
+const REFRESH_MIN_MS = 250;
+
 function showRefreshing() {
-  $("empty-state").classList.add("hidden");
-  $("panel").classList.add("hidden");
-  $("refreshing-state").classList.remove("hidden");
+  clearTimeout(refreshingTimer);
+  refreshingTimer = setTimeout(() => {
+    refreshingShownAt = Date.now();
+    $("empty-state").classList.add("hidden");
+    $("panel").classList.add("hidden");
+    $("refreshing-state").classList.remove("hidden");
+  }, REFRESH_DELAY_MS);
 }
 
-// 用已拿到的状态就地更新侧栏当前仓库项(零额外 git 调用)
+// 藏起占位:从未显示则直接返回;显示不足最短时长则延后,resolve 时占位已彻底隐藏
+function hideRefreshing() {
+  clearTimeout(refreshingTimer);
+  const el = $("refreshing-state");
+  if (el.classList.contains("hidden")) return Promise.resolve();
+  const wait = REFRESH_MIN_MS - (Date.now() - refreshingShownAt);
+  if (wait <= 0) { el.classList.add("hidden"); return Promise.resolve(); }
+  return new Promise((resolve) => setTimeout(() => { el.classList.add("hidden"); resolve(); }, wait));
+}
+
+// 用已拿到的状态就地更新侧栏当前仓库项(只改 meta 文本与 title,不重建列表,避免闪烁)
 function updateSidebarCurrent(st) {
   lastStatus = {
     staged: st.staged.length,
@@ -617,7 +687,14 @@ function updateSidebarCurrent(st) {
   const idx = repos.findIndex((r) => r.path === repo);
   if (idx < 0) return;
   repos[idx] = { ...repos[idx], is_repo: st.is_repo };
-  renderRepoList();
+  let li = null;
+  for (const el of $("repo-list").children) {
+    if (el.dataset.path === repo) { li = el; break; }
+  }
+  if (!li) return;
+  li.title = st.is_repo ? repo : repo + " · 不是 Git 仓库";
+  const meta = li.querySelector(".repo-meta");
+  if (meta) meta.textContent = repoStatusText(lastStatus);
 }
 
 // 侧栏项目第二行:本地修改情况(暂存:N，更改:N;全部干净时显示已全部提交)
@@ -951,11 +1028,11 @@ async function deleteCheckpoint(id) {
   await refresh();
 }
 
-function showEmpty(showInit) {
+async function showEmpty(showInit) {
   // 无项目时隐藏标题栏;当前选中项不是 Git 仓库时仍保留(项目已选定)
   $("project-header").classList.toggle("hidden", !repo);
   $("panel").classList.add("hidden");
-  $("refreshing-state").classList.add("hidden");
+  await hideRefreshing();
   $("empty-state").classList.remove("hidden");
   if (showInit) {
     // 当前选中的不是 Git 仓库:简洁提示 + 仅保留初始化入口
@@ -980,7 +1057,6 @@ function showEmpty(showInit) {
     const b = $(id);
     if (b) b.classList.remove("primary");
   }
-  if ($("commit-count")) $("commit-count").className = "btn-count hidden";
   if ($("push-count")) $("push-count").className = "btn-count hidden";
   if ($("pull-count")) $("pull-count").classList.add("hidden");
 }
@@ -995,15 +1071,10 @@ function setSectionOpen(secId, targetId, open) {
 function setCommitButton(st) {
   const btn = $("btn-commit");
   if (!btn || btn.classList.contains("loading")) return; // loading 中不重建,避免打断操作
-  const count = $("commit-count");
   const pending = st.staged.length + st.unstaged.length + st.untracked.length;
   btn.disabled = false;
   btn.title = pending > 0 ? "提交全部本地更改" : "没有可提交的更改";
   btn.classList.toggle("primary", pending > 0);
-  if (count) {
-    count.classList.toggle("hidden", pending === 0);
-    if (pending > 0) count.textContent = pending;
-  }
 }
 
 // 推送按钮:本地领先 → 主按钮样式;无领先 → 正常次要样式(永不禁用,空操作走 toast)
@@ -1029,9 +1100,9 @@ function refreshShipButtons() {
   }
 }
 
-function showPanel(st) {
+async function showPanel(st) {
   $("empty-state").classList.add("hidden");
-  $("refreshing-state").classList.add("hidden");
+  await hideRefreshing();
   $("panel").classList.remove("hidden");
 
   renderList("conflict-list", st.conflicts, "conflict", $("conflict-count"));
@@ -1135,6 +1206,7 @@ function renderList(listId, entries, kind, countEl) {
 
 // 添加到 .gitignore:计算文件名/扩展名/目录候选规则
 function askIgnore(path) {
+  $("dlg-ignore").dataset.path = path;
   const base = path.split("/").pop();
   const dot = base.lastIndexOf(".");
   const ext = dot > 0 ? "*" + base.slice(dot) : null;
@@ -1259,17 +1331,21 @@ async function onCommit() {
   if (!repo) { toast("请先打开项目", false); return; }
   // 弹窗已开或流式生成进行中时不重复触发
   if (popState !== "idle" || streamBusy) return;
-  const st = await invoke("git_status", { repo });
-  const total = st.staged.length + st.unstaged.length + st.untracked.length;
-  if (total === 0) { toast("没有可提交的更改", false); return; }
+  // 立即打开弹窗 + 禁用提交按钮,给用户即时反馈(不等 git status/暂存的网络往返)
+  openCommitPop();
   try {
+    const st = await invoke("git_status", { repo });
+    lastShipStatus = st; // 让 closeCommitPop 恢复按钮时基于最新状态
+    const total = st.staged.length + st.unstaged.length + st.untracked.length;
+    if (total === 0) { toast("没有可提交的更改", false); closeCommitPop(); return; }
     // 智能提交:有未暂存/未跟踪时先全部暂存,一次性提交完本地所有改动(对标 VS Code)
     if (st.staged.length < total) await invoke("git_stage_all", { repo });
     await streamCommitMessage();
   } catch (e) {
     toast(String(e), false);
-  } finally {
-    refreshShipButtons();
+    // AI 生成失败时 streamCommitMessage 会把弹窗切到可编辑手填态(popState=ready),保留;
+    // 这里只关闭 status/暂存阶段失败留下的空弹窗
+    if (popState === "streaming") closeCommitPop();
   }
 }
 
@@ -1280,23 +1356,27 @@ function openCommitPop() {
   streamCancelled = false;
   const ta = $("commit-stream-text");
   ta.value = "";
-  ta.disabled = true;
+  ta.readOnly = true; // 生成中只读(用 readOnly 而非 disabled,避免文本被强制置灰、看不清流式输出)
   $("commit-pop-title").textContent = "AI 正在生成提交信息…";
   $("commit-pop-spin").classList.remove("hidden");
   $("commit-pop-actions").classList.add("hidden");
   $("commit-pop").classList.remove("hidden");
+  // 提交中禁用工具栏按钮,避免重复触发;弹窗关闭时由 closeCommitPop 恢复
+  const cb = $("btn-commit");
+  if (cb) cb.disabled = true;
 }
 
 function closeCommitPop() {
   popState = "idle";
   $("commit-pop").classList.add("hidden");
+  refreshShipButtons(); // 恢复提交按钮(openCommitPop 时禁用过)
 }
 
 // 弹窗进入可编辑确认态
 function readyCommitPopForEdit(msg) {
   const ta = $("commit-stream-text");
   ta.value = msg;
-  ta.disabled = false;
+  ta.readOnly = false; // 生成完成,转为可编辑
   ta.focus();
   $("commit-pop-actions").classList.remove("hidden");
   popState = "ready";
@@ -1602,6 +1682,132 @@ async function runBusy(cmd, args, busyText, okText) {
     return null;
   } finally {
     setBusy(false);
+  }
+}
+
+/* ===== 运行服务器 ===== */
+const RUN_LOG_MAX = 2000; // 单仓库日志最多保留行数,超出裁掉最早的
+
+function openRunPanel() { $("run-panel").classList.remove("hidden"); }
+function closeRunPanel() { $("run-panel").classList.add("hidden"); }
+
+// 追加一行日志:skipBuffer=true 时仅渲染 DOM(由 renderRunLog 重建调用)
+function appendRunLine(cls, text, skipBuffer) {
+  const log = $("run-log");
+  if (!log) return;
+  if (repo && !skipBuffer) {
+    const arr = runLogs[repo] || (runLogs[repo] = []);
+    arr.push({ cls, text });
+    if (arr.length > RUN_LOG_MAX) arr.splice(0, arr.length - RUN_LOG_MAX);
+  }
+  const div = document.createElement("div");
+  if (cls) div.className = cls;
+  div.textContent = text;
+  log.appendChild(div);
+  while (log.childElementCount > RUN_LOG_MAX) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight; // 自动滚到底
+}
+
+// 从当前仓库的缓冲重建日志区(切换仓库时调用)
+function renderRunLog() {
+  const log = $("run-log");
+  if (!log) return;
+  log.textContent = "";
+  const lines = (repo && runLogs[repo]) || [];
+  for (const ln of lines) appendRunLine(ln.cls, ln.text, true);
+}
+
+// 按运行态刷新工具栏按钮、面板圆点与启停按钮文案
+function syncRunStatus() {
+  const running = !!runState[repo];
+  const btn = $("btn-run");
+  const tog = $("btn-run-toggle");
+  const dot = $("run-dot");
+  if (btn) btn.disabled = !repo;
+  if (btn) btn.classList.toggle("running", running);
+  $("run-label").textContent = running ? "运行中" : "运行";
+  $("btn-run-icon-play").classList.toggle("hidden", running);
+  $("btn-run-icon-stop").classList.toggle("hidden", !running);
+  if (tog && !tog.classList.contains("loading")) tog.textContent = running ? "停止" : "运行";
+  if (dot) { dot.classList.toggle("running", running); dot.title = running ? "运行中" : "未运行"; }
+}
+
+// 切换/初始化时回填当前仓库的运行命令、日志与运行态
+function syncRunPanel() {
+  const cmdInput = $("run-cmd");
+  if (!repo) {
+    if (cmdInput) cmdInput.value = "";
+    renderRunLog();
+    syncRunStatus();
+    return;
+  }
+  const saved = settings.run_commands[repo];
+  if (saved) {
+    cmdInput.value = saved;
+  } else {
+    cmdInput.value = "";
+    // 智能识别:仅作建议回填,不持久化、不覆盖用户正在输入的内容
+    const detectRepo = repo;
+    invoke("server_detect", { repo }).then((d) => {
+      // 仍在同一仓库、用户未输入且未聚焦时才回填,避免跨仓库串写
+      if (detectRepo === repo && !$("run-cmd").value && d && d.cmd && document.activeElement !== $("run-cmd")) {
+        $("run-cmd").value = d.cmd;
+      }
+    }).catch(() => {});
+  }
+  renderRunLog();
+  syncRunStatus();
+  // 后端确认真实运行态(应用刚启动时进程表为空,这里保持查询以应对未来场景)
+  const statusRepo = repo;
+  invoke("server_status", { repo }).then((s) => {
+    if (statusRepo === repo) { runState[repo] = !!s; syncRunStatus(); }
+  }).catch(() => {});
+}
+
+// 保存某仓库的运行命令(空则清除)
+function saveRunCommand(value) {
+  if (!repo) return;
+  const v = (value || "").trim();
+  if (v) settings.run_commands[repo] = v;
+  else delete settings.run_commands[repo];
+  invoke("settings_save", { settings }).catch(() => {});
+}
+
+// 启动 / 停止 当前仓库的服务器
+async function doRunToggle() {
+  if (!repo) { toast("请先选择一个项目", false); return; }
+  openRunPanel();
+  if (runState[repo]) {
+    setButtonLoading($("btn-run-toggle"), true, "停止中…");
+    try {
+      await invoke("server_stop", { repo });
+      toast("服务器已停止", true);
+    } catch (e) { toast(String(e), false); }
+    finally { setButtonLoading($("btn-run-toggle"), false); syncRunStatus(); }
+    return;
+  }
+  // 启动:取输入框命令,空则自动识别
+  let cmd = ($("run-cmd").value || "").trim();
+  if (!cmd) {
+    try {
+      const d = await invoke("server_detect", { repo });
+      if (d && d.cmd) { cmd = d.cmd; $("run-cmd").value = cmd; saveRunCommand(cmd); }
+    } catch (_) {}
+  }
+  if (!cmd) { toast("未识别到运行命令，请在输入框填写后重试", false); $("run-cmd").focus(); return; }
+  setButtonLoading($("btn-run-toggle"), true, "启动中…");
+  try {
+    await invoke("server_start", { repo, command: cmd });
+    runState[repo] = true;
+    if (!runLogs[repo]) runLogs[repo] = [];
+    appendRunLine("sys", `$ ${cmd}`);
+    syncRunStatus();
+    toast("服务器已启动", true);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    setButtonLoading($("btn-run-toggle"), false);
+    syncRunStatus();
   }
 }
 

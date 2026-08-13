@@ -388,6 +388,13 @@ pub fn unstage_file(repo: &str, path: &str) -> Result<(), String> {
     }
 }
 
+/// 把单个文件从 git 跟踪中移除(仅删 index,保留工作区文件)。
+/// 已跟踪/已暂存文件仅靠 .gitignore 不会从 git status 消失,需先从 index 移除
+/// 才会被忽略;--ignore-unmatch 保证文件不在 index(未跟踪)时也不报错。
+pub fn untrack_file(repo: &str, path: &str) -> Result<(), String> {
+    run_git(repo, &["rm", "--cached", "--quiet", "--ignore-unmatch", "--", path]).map(|_| ())
+}
+
 // 放弃所有未暂存的工作区修改:把已跟踪文件还原到索引状态
 // 不动未跟踪文件(它们属于"新建",非"修改"),也不影响已暂存内容
 pub fn discard_all_changes(repo: &str) -> Result<(), String> {

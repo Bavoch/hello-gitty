@@ -2,6 +2,7 @@ mod ai;
 mod checkpoint;
 mod config;
 mod git;
+mod runner;
 
 use ai::{AiConfig, ConflictOutcome};
 use config::{Settings, SettingsStore};
@@ -264,11 +265,13 @@ fn gitignore_read(repo: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("读取 .gitignore 失败： {e}"))
 }
 
-/// 写入项目根目录的 .gitignore(覆盖)
+/// 写入项目根目录的 .gitignore(覆盖),并自动将其暂存到 index,
+/// 以免它本身作为未暂存改动残留在更改列表里。
 #[tauri::command]
 fn gitignore_write(repo: String, content: String) -> Result<(), String> {
     let path = std::path::Path::new(&repo).join(".gitignore");
-    std::fs::write(&path, content).map_err(|e| format!("写入 .gitignore 失败： {e}"))
+    std::fs::write(&path, content).map_err(|e| format!("写入 .gitignore 失败： {e}"))?;
+    git::stage_file(&repo, ".gitignore")
 }
 
 /// 克隆远程仓库到指定本地目录
@@ -523,6 +526,13 @@ fn git_stage_file(repo: String, path: String) -> Result<(), String> {
 #[tauri::command]
 fn git_unstage_file(repo: String, path: String) -> Result<(), String> {
     git::unstage_file(&repo, &path)
+}
+
+/// 将单个文件从 git 跟踪中移除(保留工作区文件),使其在被加入 .gitignore 后
+/// 能立即从状态列表消失。对未跟踪文件无害(--ignore-unmatch)。
+#[tauri::command]
+fn git_untrack_file(repo: String, path: String) -> Result<(), String> {
+    git::untrack_file(&repo, &path)
 }
 
 #[tauri::command]
@@ -805,9 +815,36 @@ async fn ai_resolve_conflicts(
     .await
 }
 
+/// 智能识别仓库的默认「运行服务器」命令
+#[tauri::command]
+async fn server_detect(repo: String) -> Option<runner::DetectResult> {
+    let r = repo.clone();
+    tauri::async_runtime::spawn_blocking(move || runner::detect(&r))
+        .await
+        .unwrap_or(None)
+}
+
+/// 启动一条长驻命令:stdout/stderr 逐行经 server-log 事件回推
+#[tauri::command]
+fn server_start(app: tauri::AppHandle, repo: String, command: String) -> Result<(), String> {
+    runner::spawn_server(&app, &repo, &command)
+}
+
+/// 停止指定仓库的服务器
+#[tauri::command]
+fn server_stop(app: tauri::AppHandle, repo: String) -> Result<bool, String> {
+    runner::stop(&app, &repo)
+}
+
+/// 查询仓库的服务器是否在运行
+#[tauri::command]
+fn server_status(app: tauri::AppHandle, repo: String) -> bool {
+    runner::is_running(&app, &repo)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // 重复启动时聚焦已有窗口,不创建第二个实例
             if let Some(win) = app.get_webview_window("main") {
@@ -817,6 +854,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .manage(runner::RunRegistry::default())
         .invoke_handler(tauri::generate_handler![
             settings_load,
             settings_save,
@@ -836,6 +874,7 @@ pub fn run() {
             git_unstage_all,
             git_stage_file,
             git_unstage_file,
+            git_untrack_file,
             git_discard_all,
             git_discard_file,
             git_commit,
@@ -858,6 +897,10 @@ pub fn run() {
             ai_presets,
             ai_resolve_file,
             ai_resolve_conflicts,
+            server_detect,
+            server_start,
+            server_stop,
+            server_status,
         ])
         .on_window_event(|window, event| {
             // 关闭窗口不退出应用,隐藏到菜单栏托盘常驻
@@ -906,6 +949,12 @@ pub fn run() {
                 .build(app)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("Hello Gitty 启动失败");
+    // 应用真正退出时(含托盘「退出」、Cmd+Q、Dock 退出):统一关闭所有运行中的服务器,避免孤儿进程
+    app.run(|app, event| {
+        if let tauri::RunEvent::Exit = event {
+            runner::kill_all(app);
+        }
+    });
 }

@@ -77,7 +77,6 @@
           <button id="btn-commit" class="tool-btn" title="提交" disabled>
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
             提交
-            <span id="commit-count" class="btn-count commit hidden" title="待提交的更改数"></span>
           </button>
           <button id="btn-push" class="tool-btn" title="推送" disabled>
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
@@ -108,6 +107,11 @@
         <button id="btn-checkpoint" class="tool-btn" title="创建存档点（保存当前工作区完整状态，AI 改坏了一键读档）">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
           存档点
+        </button>
+        <button id="btn-run" class="tool-btn" title="运行项目开发服务器（实时日志，可停止）">
+          <svg id="btn-run-icon-play" viewBox="0 0 24 24" width="13" height="13" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="btn-run-icon-stop" class="hidden" viewBox="0 0 24 24" width="13" height="13" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+          <span id="run-label">运行</span>
         </button>
         <span class="busy-ind hidden" id="sb-busy">
           <span class="spinner"></span><span id="sb-busy-text">处理中…</span>
@@ -200,6 +204,18 @@
             <div id="history-container"></div>
           </div>
         </div>
+      </div>
+
+      <!-- 运行服务器面板(底部可折叠) -->
+      <div id="run-panel" class="hidden">
+        <div class="run-head">
+          <span class="run-dot" id="run-dot" title="未运行"></span>
+          <input id="run-cmd" type="text" class="run-cmd-input" placeholder="运行命令，如 npm run dev（留空按项目自动识别）" title="项目的运行命令，回车保存" />
+          <button class="tool-btn" id="btn-run-toggle">运行</button>
+          <button class="icon-btn" id="btn-run-clear" title="清空日志"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+          <button class="icon-btn" id="btn-run-collapse" title="收起"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button>
+        </div>
+        <pre id="run-log" class="run-log"></pre>
       </div>
     </div>
   </main>

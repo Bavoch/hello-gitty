@@ -116,7 +116,7 @@ select option { background: #3c3c3c; color: var(--text); }
   padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--border);
 }
 /* 工具栏按钮角标定位基点 */
-#btn-commit, #btn-push, #btn-pull { position: relative; }
+#btn-push, #btn-pull { position: relative; }
 .btn-count {
   position: absolute; top: -3px; right: -4px;
   min-width: 14px; height: 14px; padding: 0 3px;
@@ -126,7 +126,6 @@ select option { background: #3c3c3c; color: var(--text); }
 }
 .btn-count.push { background: var(--blue); color: #1e1e1e; }
 .btn-count.pull { background: var(--red); color: #fff; }
-.btn-count.commit { background: var(--green); color: #1e1e1e; }
 
 /* 幽灵按钮:透明底 + 描边 + 图标文字;悬停只变背景,边框保持不变 */
 .tool-btn {
@@ -542,9 +541,10 @@ body.resizing { cursor: col-resize; user-select: none; }
   display: flex; flex-direction: column; gap: 2px;
 }
 .settings-nav-item {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; justify-content: flex-start; gap: 12px;
   padding: 7px 10px; border-radius: 5px;
   font-size: 13.5px; line-height: 1; color: var(--text-dim); cursor: pointer;
+  text-align: left;
 }
 .settings-nav-item:hover { background: var(--hover); color: var(--text); }
 .settings-nav-item.active { background: var(--hover-strong); color: var(--text); }
@@ -607,3 +607,41 @@ body.resizing { cursor: col-resize; user-select: none; }
   z-index: 100;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ===== 运行服务器面板(底部可折叠) ===== */
+#run-panel {
+  flex: none; height: 220px;
+  display: flex; flex-direction: column;
+  background: var(--panel); border-top: 1px solid var(--border);
+}
+.run-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+}
+/* 状态圆点:未运行灰、运行中绿(脉冲) */
+.run-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--text-dim);
+}
+.run-dot.running { background: var(--green); animation: run-pulse 1.4s ease-in-out infinite; }
+@keyframes run-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 #89d18566; }
+  50% { box-shadow: 0 0 0 4px #89d18500; }
+}
+.run-cmd-input {
+  flex: 1; min-width: 0;
+  font-family: var(--mono); font-size: 12.5px;
+  background: var(--bg); border-color: var(--border);
+}
+.run-log {
+  flex: 1; overflow: auto; margin: 0; padding: 6px 10px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.55;
+  background: #1a1a1a; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+  user-select: text;
+}
+.run-log .err { color: var(--red); }
+.run-log .sys { color: var(--text-dim); }
+/* 工具栏运行按钮:运行中态 */
+#btn-run.running { color: var(--green); border-color: #89d18555; }
+#btn-run.running .run-label { color: var(--green); }

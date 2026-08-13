@@ -7,3 +7,5 @@ dist/
 
 # 系统
 .DS_Store
+.zcode/plans/
+.workbuddy/memory/

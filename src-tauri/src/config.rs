@@ -12,6 +12,9 @@ pub struct Settings {
     /// 仓库列表(多仓库管理,顺序即展示顺序)
     #[serde(default)]
     pub repos: Vec<String>,
+    /// 每个仓库自定义的「运行服务器」命令(路径 -> 命令),未设置时由 runner 智能识别
+    #[serde(default)]
+    pub run_commands: std::collections::HashMap<String, String>,
 }
 
 pub struct SettingsStore {
