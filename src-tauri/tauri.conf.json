@@ -5,8 +5,8 @@
   "identifier": "com.hellogitty.desktop",
   "build": {
     "frontendDist": "../src",
-    "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "python -m http.server 1420 --directory ./src",
+    "devUrl": "http://localhost:1421",
+    "beforeDevCommand": "python3 scripts/dev_server.py 1421 ./src",
     "beforeBuildCommand": ""
   },
   "app": {
