@@ -24,7 +24,10 @@ let streamCancelled = false; // 软取消:流式中忽略后续事件、不自�
 let streamBusy = false;    // 流式 invoke 进行中(含已软取消但后端未返回),用于阻塞重复触发
 // 「运行服务器」:每个仓库一份日志缓冲 + 运行态,跨仓库切换不丢失
 let runLogs = {};   // repo -> [{ cls: "" | "err" | "sys", text }]
-let runState = {};  // repo -> Boolean(是否运行中)
+let runState = {};  // repo -> Boolean(本应用启动的进程是否运行中)
+let extRun = {};    // repo -> [{port, source}] 外部检测到的占用端口(其他应用/终端已启动)
+let runCmdOptions = []; // 当前仓库的识别候选[{cmd,source}],供标题栏下拉展示
+let ctxRepo = null;     // 右键菜单当前目标项目路径(仅菜单打开期间有效)
 
 init();
 
@@ -72,7 +75,11 @@ async function init() {
     const p = e.payload;
     if (!p) return;
     runState[p.repo] = !!p.running;
-    if (p.repo === repo) syncRunStatus();
+    if (p.repo === repo) {
+      syncRunStatus();
+      // 自启动进程退出后端口可能已被外部占用或已释放,重查外部态避免残留误报
+      if (!p.running) refreshExternalStatus();
+    }
     // 仅非主动停止(进程自身退出/崩溃,带退出码)时提示;主动停止由 doRunToggle 提示
     if (!p.running && p.code !== undefined && p.code !== null) {
       toast(`服务器已停止（退出码 ${p.code}）`, false);
@@ -88,8 +95,11 @@ async function init() {
     showEmpty(false);
   }
   syncRunPanel(); // 运行面板:回填命令、刷新日志与运行态
+  syncRunToggle(); // 展开/收起按钮初始态(日志区默认收起,箭头朝下)
   // 定时后台 fetch:远程有新提交时,ahead/behind 徽标与远程历史自动更新
   setInterval(fetchRemote, 60_000);
+  // 定期重查外部运行态:在别处启动/停止项目后,按钮状态自动跟随(端口探测开销极小)
+  setInterval(refreshExternalStatus, 30_000);
 }
 
 function bindEvents() {
@@ -118,11 +128,15 @@ function bindEvents() {
   $("btn-checkpoint").addEventListener("click", createCheckpoint);
   // 运行服务器
   $("btn-run").addEventListener("click", doRunToggle);
-  $("btn-run-toggle").addEventListener("click", doRunToggle);
-  $("btn-run-clear").addEventListener("click", () => {
-    if (repo) { runLogs[repo] = []; renderRunLog(); }
+  // 标题栏运行命令下拉:点击箭头展开候选列表
+  $("btn-run-caret").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = $("run-menu");
+    if (menu.classList.contains("hidden")) renderRunMenu();
+    else menu.classList.add("hidden");
   });
-  $("btn-run-collapse").addEventListener("click", closeRunPanel);
+  $("run-menu").addEventListener("click", (e) => e.stopPropagation());
+  $("btn-run-collapse").addEventListener("click", toggleRunPanel);
   // 命令输入:回车/失焦时保存为该仓库的命令(空则清除)
   const saveCmd = () => saveRunCommand($("run-cmd").value);
   $("run-cmd").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveCmd(); $("run-cmd").blur(); } });
@@ -145,7 +159,6 @@ function bindEvents() {
     $("sidebar").style.width = w + "px";
   };
   const endSidebarDrag = () => {
-    $("sidebar-resizer").classList.remove("dragging");
     document.body.classList.remove("resizing");
     document.removeEventListener("pointermove", onSidebarDrag);
     settings.sidebar_width = parseInt($("sidebar").style.width, 10);
@@ -171,7 +184,6 @@ function bindEvents() {
     e.preventDefault();
     sidebarDragStartX = e.clientX;
     sidebarDragStartW = $("sidebar").getBoundingClientRect().width;
-    $("sidebar-resizer").classList.add("dragging");
     document.body.classList.add("resizing");
     document.addEventListener("pointermove", onSidebarDrag);
     document.addEventListener("pointerup", endSidebarDrag, { once: true });
@@ -245,10 +257,24 @@ function bindEvents() {
     finally { setButtonLoading($("btn-ignore-confirm"), false); }
   });
   $("btn-ignore-cancel").addEventListener("click", () => $("dlg-ignore").classList.add("hidden"));
+  // 侧栏右键菜单:关闭当前右键目标项目
+  $("ctx-close").addEventListener("click", () => {
+    const path = ctxRepo;
+    closeCtxMenu();
+    if (path) removeRepo(path);
+  });
+  // 点击空白处 / ESC:收起所有弹层
   document.addEventListener("click", () => {
     $("more-menu").classList.add("hidden");
     $("branch-menu").classList.add("hidden");
+    $("run-menu").classList.add("hidden");
+    closeCtxMenu();
   });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { $("more-menu").classList.add("hidden"); closeCtxMenu(); }
+  });
+  // 任何容器滚动都收起右键菜单(菜单 fixed 定位不跟随滚动,收起避免位置错乱)
+  window.addEventListener("scroll", closeCtxMenu, true);
   // 侧栏拖拽排序:按下在各 li,移动/松手由文档统一接收(指针移出原项也能持续追踪)
   document.addEventListener("pointermove", onRepoDragMove);
   document.addEventListener("pointerup", onRepoDragUp);
@@ -504,6 +530,11 @@ function renderRepoList() {
       if (suppressClick) { suppressClick = false; return; } // 拖拽刚结束:吞掉合成 click
       switchRepo(r.path);
     });
+    // 右键:弹出项目菜单(目前仅「关闭项目」,不切换选中)
+    li.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openCtxMenu(e.clientX, e.clientY, r.path);
+    });
     // pointer 实现拖拽:按下记录起点,移动超阈值才拖(普通点击仍可切换仓库)
     li.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return; // 仅左键
@@ -591,6 +622,20 @@ function updateSidebarActive(path) {
   }
   const active = $("repo-list").querySelector(".repo-item.active");
   if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+// 在鼠标位置弹出侧栏右键菜单,位置钳制在视口内
+function openCtxMenu(x, y, path) {
+  const menu = $("ctx-menu");
+  ctxRepo = path;
+  menu.classList.remove("hidden");
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 4)) + "px";
+  menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 4)) + "px";
+}
+function closeCtxMenu() {
+  $("ctx-menu").classList.add("hidden");
+  ctxRepo = null;
 }
 
 async function removeRepo(path) {
@@ -1699,8 +1744,20 @@ async function runBusy(cmd, args, busyText, okText) {
 /* ===== 运行服务器 ===== */
 const RUN_LOG_MAX = 2000; // 单仓库日志最多保留行数,超出裁掉最早的
 
-function openRunPanel() { $("run-panel").classList.remove("hidden"); }
-function closeRunPanel() { $("run-panel").classList.add("hidden"); }
+function openRunPanel() { $("run-panel").classList.remove("closed"); syncRunToggle(); }
+function closeRunPanel() { $("run-panel").classList.add("closed"); syncRunToggle(); }
+// 展开/收起切换(标题栏常驻,收起后仍可展开)
+function toggleRunPanel() {
+  if ($("run-panel").classList.contains("closed")) openRunPanel();
+  else closeRunPanel();
+}
+// 同步切换按钮的箭头朝向与标题(收起时箭头朝下=可展开)
+function syncRunToggle() {
+  const btn = $("btn-run-collapse");
+  if (!btn) return;
+  const closed = $("run-panel").classList.contains("closed");
+  btn.title = closed ? "展开日志面板" : "收起日志面板";
+}
 
 // 追加一行日志:skipBuffer=true 时仅渲染 DOM(由 renderRunLog 重建调用)
 function appendRunLine(cls, text, skipBuffer) {
@@ -1728,51 +1785,92 @@ function renderRunLog() {
   for (const ln of lines) appendRunLine(ln.cls, ln.text, true);
 }
 
-// 按运行态刷新工具栏按钮、面板圆点与启停按钮文案
+// 按运行态刷新工具栏按钮、面板圆点与启停按钮文案(自启动 + 外部检测合并展示)
 function syncRunStatus() {
-  const running = !!runState[repo];
+  const selfRunning = !!runState[repo];
+  const ext = extRun[repo] || [];
+  const extOnly = !selfRunning && ext.length > 0;
+  const running = selfRunning || extOnly;
   const btn = $("btn-run");
-  const tog = $("btn-run-toggle");
-  const dot = $("run-dot");
-  if (btn) btn.disabled = !repo;
-  if (btn) btn.classList.toggle("running", running);
-  $("run-label").textContent = running ? "运行中" : "运行";
-  $("btn-run-icon-play").classList.toggle("hidden", running);
-  $("btn-run-icon-stop").classList.toggle("hidden", !running);
-  if (tog && !tog.classList.contains("loading")) tog.textContent = running ? "停止" : "运行";
-  if (dot) { dot.classList.toggle("running", running); dot.title = running ? "运行中" : "未运行"; }
+  if (btn) {
+    btn.disabled = !repo;
+    btn.classList.toggle("running", running);
+    // 融合按钮的整体边框色跟随运行态
+    btn.closest(".run-btn-wrap")?.classList.toggle("running", running);
+    // 外部运行中的进程不是本应用启动的,不可停止,仅提示
+    btn.title = extOnly ? "已在外部运行，请到外部停止" : "运行项目开发服务器（实时日志，可停止）";
+  }
+  // 子元素仅在非 loading 时更新(loading 时 innerHTML 已被 spinner 替换,元素不存在)
+  if (btn && !btn.classList.contains("loading")) {
+    $("run-label").textContent = running ? "运行中" : "运行";
+    $("btn-run-icon-play").classList.toggle("hidden", running);
+    $("btn-run-icon-stop").classList.toggle("hidden", !running);
+  }
 }
 
 // 切换/初始化时回填当前仓库的运行命令、日志与运行态
 function syncRunPanel() {
   const cmdInput = $("run-cmd");
+  $("run-menu").classList.add("hidden");
   if (!repo) {
     if (cmdInput) cmdInput.value = "";
+    fillRunCmdOptions([]);
+    runCmdOptions = [];
     renderRunLog();
     syncRunStatus();
     return;
   }
   const saved = settings.run_commands[repo];
-  if (saved) {
-    cmdInput.value = saved;
-  } else {
-    cmdInput.value = "";
-    // 智能识别:仅作建议回填,不持久化、不覆盖用户正在输入的内容
-    const detectRepo = repo;
-    invoke("server_detect", { repo }).then((d) => {
-      // 仍在同一仓库、用户未输入且未聚焦时才回填,避免跨仓库串写
-      if (detectRepo === repo && !$("run-cmd").value && d && d.cmd && document.activeElement !== $("run-cmd")) {
-        $("run-cmd").value = d.cmd;
-      }
-    }).catch(() => {});
-  }
+  if (saved) cmdInput.value = saved;
+  else cmdInput.value = "";
+  // 智能识别:候选填入下拉;仅作建议回填(不持久化、不覆盖用户正在输入的内容)
+  const detectRepo = repo;
+  invoke("server_detect", { repo }).then((list) => {
+    if (detectRepo !== repo) return; // 已切换仓库,丢弃过期结果
+    runCmdOptions = list || [];
+    fillRunCmdOptions(runCmdOptions);
+    const hasSaved = !!settings.run_commands[repo];
+    if (!hasSaved && !$("run-cmd").value && document.activeElement !== $("run-cmd") && runCmdOptions.length) {
+      $("run-cmd").value = runCmdOptions[0].cmd;
+    }
+  }).catch(() => {});
   renderRunLog();
   syncRunStatus();
+  // 本应用启动且运行中的项目:切回时自动展开日志面板(外部运行无日志流,不自动打开)
+  if (runState[repo] && $("run-panel").classList.contains("closed")) openRunPanel();
   // 后端确认真实运行态(应用刚启动时进程表为空,这里保持查询以应对未来场景)
   const statusRepo = repo;
   invoke("server_status", { repo }).then((s) => {
-    if (statusRepo === repo) { runState[repo] = !!s; syncRunStatus(); }
+    if (statusRepo === repo) {
+      runState[repo] = !!s;
+      syncRunStatus();
+      if (s && $("run-panel").classList.contains("closed")) openRunPanel();
+    }
   }).catch(() => {});
+  // 外部运行检测:端口被占用说明项目已在其他应用/终端启动,按钮同样显示运行中(但不可停止)
+  refreshExternalStatus();
+}
+
+// 重新探测当前仓库的外部占用端口(端口占用随时变化:外部启动/停止后需刷新)
+function refreshExternalStatus() {
+  if (!repo) return;
+  const r = repo;
+  invoke("server_external_check", { repo }).then((ports) => {
+    if (r === repo) { extRun[repo] = ports || []; syncRunStatus(); }
+  }).catch(() => {});
+}
+
+// 填充运行命令候选下拉(来源标注为 label,命令为 value)
+function fillRunCmdOptions(list) {
+  const dl = $("run-cmd-options");
+  if (!dl) return;
+  dl.innerHTML = "";
+  for (const it of list || []) {
+    const o = document.createElement("option");
+    o.value = it.cmd;
+    o.label = it.source;
+    dl.appendChild(o);
+  }
 }
 
 // 保存某仓库的运行命令(空则清除)
@@ -1787,26 +1885,38 @@ function saveRunCommand(value) {
 // 启动 / 停止 当前仓库的服务器
 async function doRunToggle() {
   if (!repo) { toast("请先选择一个项目", false); return; }
-  openRunPanel();
   if (runState[repo]) {
-    setButtonLoading($("btn-run-toggle"), true, "停止中…");
+    setButtonLoading($("btn-run"), true, "停止中…");
     try {
       await invoke("server_stop", { repo });
       toast("服务器已停止", true);
     } catch (e) { toast(String(e), false); }
-    finally { setButtonLoading($("btn-run-toggle"), false); syncRunStatus(); }
+    finally { setButtonLoading($("btn-run"), false); syncRunStatus(); }
     return;
   }
-  // 启动:取输入框命令,空则自动识别
-  let cmd = ($("run-cmd").value || "").trim();
+  const ext = extRun[repo] || [];
+  if (ext.length) { toast(`已在外部运行（端口 ${ext.map((p) => p.port).join("、")}），请到外部停止`, false); return; }
+  await startServer();
+}
+
+// 启动服务器:cmd 为空时取输入框值,再空则自动识别候选第一个
+async function startServer(cmd) {
+  if (!repo) { toast("请先选择一个项目", false); return; }
+  openRunPanel(); // 点击运行自动向上展开日志面板
+  if (runState[repo]) { toast("服务器已在运行", true); return; }
+  const ext = extRun[repo] || [];
+  if (ext.length) { toast(`端口 ${ext.map((p) => p.port).join("、")} 已被占用，项目可能已在外部运行`, false); return; }
   if (!cmd) {
-    try {
-      const d = await invoke("server_detect", { repo });
-      if (d && d.cmd) { cmd = d.cmd; $("run-cmd").value = cmd; saveRunCommand(cmd); }
-    } catch (_) {}
+    cmd = ($("run-cmd").value || "").trim();
+    if (!cmd) {
+      try {
+        const list = await invoke("server_detect", { repo });
+        if (list && list.length && list[0].cmd) { cmd = list[0].cmd; $("run-cmd").value = cmd; saveRunCommand(cmd); }
+      } catch (_) {}
+    }
   }
-  if (!cmd) { toast("未识别到运行命令，请在输入框填写后重试", false); $("run-cmd").focus(); return; }
-  setButtonLoading($("btn-run-toggle"), true, "启动中…");
+  if (!cmd) { toast("未识别到运行命令，请在运行面板填写", false); $("run-cmd").focus(); return; }
+  setButtonLoading($("btn-run"), true, "启动中…");
   try {
     await invoke("server_start", { repo, command: cmd });
     runState[repo] = true;
@@ -1817,9 +1927,52 @@ async function doRunToggle() {
   } catch (e) {
     toast(String(e), false);
   } finally {
-    setButtonLoading($("btn-run-toggle"), false);
+    setButtonLoading($("btn-run"), false);
     syncRunStatus();
   }
+}
+
+// 渲染面板内运行命令下拉(已保存命令置顶,其余为识别候选)
+function renderRunMenu() {
+  const menu = $("run-menu");
+  menu.innerHTML = "";
+  menu.classList.remove("hidden");
+  const saved = repo && settings.run_commands[repo];
+  const opts = [...runCmdOptions];
+  if (saved && !opts.some((o) => o.cmd === saved)) {
+    opts.unshift({ cmd: saved, source: "已保存" });
+  }
+  if (!opts.length) {
+    const d = document.createElement("div");
+    d.className = "run-menu-empty";
+    d.textContent = "未识别到运行命令，可在运行面板填写";
+    menu.appendChild(d);
+    return;
+  }
+  for (const it of opts) {
+    const b = document.createElement("button");
+    b.className = "run-menu-item";
+    b.title = it.cmd;
+    const t = document.createElement("span");
+    t.className = "run-cmd-text";
+    t.textContent = it.cmd;
+    const s = document.createElement("span");
+    s.className = "run-cmd-src";
+    s.textContent = it.source;
+    b.append(t, s);
+    b.addEventListener("click", () => chooseRunCommand(it.cmd));
+    menu.appendChild(b);
+  }
+}
+
+// 下拉选中某命令:保存 + 直接启动
+function chooseRunCommand(cmd) {
+  $("run-menu").classList.add("hidden");
+  if (!repo) return;
+  if (runState[repo]) { toast("服务器运行中，请先停止", false); return; }
+  $("run-cmd").value = cmd;
+  saveRunCommand(cmd);
+  startServer(cmd);
 }
 
 function setBusy(v, text) {
