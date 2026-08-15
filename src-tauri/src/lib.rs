@@ -815,13 +815,13 @@ async fn ai_resolve_conflicts(
     .await
 }
 
-/// 智能识别仓库的默认「运行服务器」命令
+/// 智能识别仓库的全部「运行服务器」命令候选(按优先级排序)
 #[tauri::command]
-async fn server_detect(repo: String) -> Option<runner::DetectResult> {
+async fn server_detect(repo: String) -> Vec<runner::DetectResult> {
     let r = repo.clone();
-    tauri::async_runtime::spawn_blocking(move || runner::detect(&r))
+    tauri::async_runtime::spawn_blocking(move || runner::detect_all(&r))
         .await
-        .unwrap_or(None)
+        .unwrap_or_default()
 }
 
 /// 启动一条长驻命令:stdout/stderr 逐行经 server-log 事件回推
@@ -840,6 +840,15 @@ fn server_stop(app: tauri::AppHandle, repo: String) -> Result<bool, String> {
 #[tauri::command]
 fn server_status(app: tauri::AppHandle, repo: String) -> bool {
     runner::is_running(&app, &repo)
+}
+
+/// 检测仓库是否已在外部运行:探测其开发端口,返回被占用的端口列表(空 = 未检测到)
+#[tauri::command]
+async fn server_external_check(repo: String) -> Vec<runner::ProbedPort> {
+    let r = repo.clone();
+    tauri::async_runtime::spawn_blocking(move || runner::probe_ports(&r))
+        .await
+        .unwrap_or_default()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -901,6 +910,7 @@ pub fn run() {
             server_start,
             server_stop,
             server_status,
+            server_external_check,
         ])
         .on_window_event(|window, event| {
             // 关闭窗口不退出应用,隐藏到菜单栏托盘常驻
