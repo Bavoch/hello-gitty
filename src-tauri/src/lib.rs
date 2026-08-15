@@ -37,7 +37,7 @@ fn git_status(repo: String) -> git::RepoStatus {
     git::status(&repo)
 }
 
-/// 单仓库状态摘要(侧栏列表用)
+/// 单仓库状态摘要(侧栏列表/总览仪表盘用)
 #[derive(Serialize, Clone)]
 struct RepoSummary {
     path: String,
@@ -49,6 +49,8 @@ struct RepoSummary {
     unstaged: usize,
     conflicts: usize,
     is_repo: bool,
+    /// 最近一次提交的 unix 时间戳(秒);非仓库/空仓库为 None
+    last_commit_ts: Option<i64>,
     /// 项目图标(data URL),无图标则为 None
     icon: Option<String>,
 }
@@ -156,6 +158,7 @@ fn summarize(path: &str) -> RepoSummary {
         unstaged: st.unstaged.len() + st.untracked.len(),
         conflicts: st.conflicts.len(),
         is_repo: st.is_repo,
+        last_commit_ts: if st.is_repo { git::last_commit_ts(path) } else { None },
         icon: repo_icon_data_url(path),
     }
 }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hello Gitty</title>
-  <link rel="stylesheet" href="styles.css?v=20260814224424" />
+  <link rel="stylesheet" href="styles.css?v=20260815110000" />
   <script>
     // 仅开发模式(http://localhost:1421)生效:检测源文件变更后自动刷新窗口
     if (location.protocol === "http:") {
@@ -41,6 +41,15 @@
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"/></svg>
         </button>
       </div>
+      <button id="btn-overview" class="repo-item overview-item" title="全部项目状态总览">
+        <span class="repo-icon-wrap overview-icon">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        </span>
+        <div class="repo-info">
+          <span class="repo-name">总览</span>
+          <div class="repo-meta" id="overview-meta"></div>
+        </div>
+      </button>
       <ul id="repo-list"></ul>
       <div id="sidebar-empty" class="sidebar-empty hidden">暂无项目，点击 + 添加</div>
       <div class="sidebar-footer">
@@ -147,6 +156,12 @@
 
         <div id="refreshing-state" class="hidden state-loading">
           <span class="spinner"></span>
+        </div>
+
+        <!-- 多仓库总览:全部项目状态一览,点击行进入项目 -->
+        <div id="dashboard" class="hidden">
+          <div class="dash-stats" id="dash-stats"></div>
+          <ul class="dash-list" id="dash-list"></ul>
         </div>
 
         <div id="panel" class="hidden">
@@ -424,6 +439,6 @@
     <button id="ctx-close">关闭项目</button>
   </div>
 
-  <script src="main.js?v=20260814214951"></script>
+  <script src="main.js?v=20260815110000"></script>
 </body>
 </html>

@@ -28,6 +28,7 @@ let runState = {};  // repo -> Boolean(本应用启动的进程是否运行中)
 let extRun = {};    // repo -> [{port, source}] 外部检测到的占用端口(其他应用/终端已启动)
 let runCmdOptions = []; // 当前仓库的识别候选[{cmd,source}],供标题栏下拉展示
 let ctxRepo = null;     // 右键菜单当前目标项目路径(仅菜单打开期间有效)
+let view = "repo";      // 主区视图:repo(单项目面板) | overview(多仓库总览)
 
 init();
 
@@ -104,6 +105,7 @@ async function init() {
 
 function bindEvents() {
   $("btn-open2").addEventListener("click", openLocalRepo);
+  $("btn-overview").addEventListener("click", showOverview);
   $("btn-add-repo").addEventListener("click", () => showEmpty(false));
   $("btn-clone").addEventListener("click", cloneRepo);
   $("clone-dest").addEventListener("click", async () => {
@@ -322,6 +324,7 @@ async function openLocalRepo() {
 
 // 按路径添加项目并切换(供打开本地/拖拽复用)
 async function addRepoByPath(dir) {
+  leaveOverview(); // 拖拽添加可能发生在总览视图:切回仓库视图展示新项目
   try {
     settings.repos = await invoke("repos_add", { path: dir });
   } catch (e) { toast("添加失败：" + e, false); return; }
@@ -379,6 +382,7 @@ async function loadRepos() {
   try { repos = await invoke("repos_status_all"); }
   catch (_) { /* 扫描失败时保留现有列表,不清空 */ }
   renderRepoList();
+  if (view === "overview") renderDashboard(); // 总览态:摘要更新后总览行同步重渲染
 }
 
 // 无图标项目的字母头像配色:10 种高区分度配色(与主题暗色系协调),按路径哈希稳定分配
@@ -477,6 +481,7 @@ function renderRepoList() {
   const ul = $("repo-list");
   ul.innerHTML = "";
   $("sidebar-empty").classList.toggle("hidden", repos.length > 0);
+  $("overview-meta").textContent = repos.length ? repos.length + " 个项目" : "";
   for (const r of repos) {
     const li = document.createElement("li");
     li.className = "repo-item" + (r.path === repo ? " active" : "");
@@ -604,7 +609,8 @@ function applySidebarMode() {
 }
 
 async function switchRepo(path) {
-  if (path === repo) return;
+  if (path === repo && view === "repo") return;
+  leaveOverview(); // 从总览点进项目:恢复仓库级界面(标题栏/工具栏)
   repo = path;
   settings.last_repo = path;
   try { await invoke("repos_set_current", { path }); } catch (_) {}
@@ -645,7 +651,8 @@ async function removeRepo(path) {
     repo = settings.repos[0] || null;
     settings.last_repo = repo;
   }
-  await loadRepos();
+  await loadRepos(); // 总览视图下:列表与总览行已同步更新,主区保持总览不动
+  if (view === "overview") return;
   if (repo) await refresh(); else showEmpty(false);
 }
 
@@ -674,7 +681,10 @@ async function fetchRemote() {
   try {
     const r = await invoke("git_fetch", { repo });
     if (r && r.ok === false) return; // 无远程/无网络/认证失败等:静默忽略
-    if (repo === target) await refresh(); // fetch 后重读状态,更新 ahead/behind 徽标
+    if (repo !== target) return;
+    // fetch 后重读状态,更新 ahead/behind 徽标;总览视图下改刷摘要(总览行经 loadRepos 重渲染)
+    if (view === "repo") await refresh();
+    else await loadRepos();
   } catch (_) { /* 静默 */ }
   finally { fetching = false; }
 }
@@ -777,6 +787,148 @@ function updateProjectHeader() {
   $("proj-name").textContent = cur.name || cur.path;
   $("proj-path").textContent = cur.path;
   $("proj-path").title = cur.path;
+}
+
+/* ===== 多仓库总览 ===== */
+// 进入总览:先用现有摘要立即渲染(避免空白),再后台重扫刷新计数
+async function showOverview() {
+  if (view === "overview") return;
+  view = "overview";
+  $("btn-overview").classList.add("active");
+  updateSidebarActive(null); // 清掉项目列表全部高亮
+  $("project-header").classList.add("hidden");
+  $("toolbar").classList.add("hidden");
+  $("empty-state").classList.add("hidden");
+  $("panel").classList.add("hidden");
+  $("dashboard").classList.remove("hidden");
+  renderDashboard(); // 先用现有摘要立即渲染,避免空白
+  await loadRepos(); // 后台重扫刷新计数(loadRepos 在总览态自动重渲染总览)
+}
+
+// 离开总览:恢复仓库级界面骨架(内容由 refresh/showPanel/showEmpty 填充),幂等
+function leaveOverview() {
+  view = "repo";
+  $("btn-overview").classList.remove("active");
+  $("dashboard").classList.add("hidden");
+  $("toolbar").classList.remove("hidden");
+}
+
+// 总览关注度分组:冲突 > 待推送 > 有未提交 > 干净 > 非 Git
+function overviewRank(r) {
+  if (r.conflicts > 0) return 0;
+  if (r.ahead > 0) return 1;
+  if (r.staged + r.unstaged > 0) return 2;
+  return r.is_repo ? 3 : 4;
+}
+
+function renderDashboard() {
+  const rows = [...repos].sort(
+    (a, b) => overviewRank(a) - overviewRank(b) || (b.last_commit_ts || 0) - (a.last_commit_ts || 0)
+  );
+  // 顶部统计:仅显示非零段;全部干净时给出「全部已同步」
+  const nPush = repos.filter((r) => r.ahead > 0).length;
+  const nDirty = repos.filter((r) => r.is_repo && r.staged + r.unstaged > 0).length;
+  const nConf = repos.filter((r) => r.conflicts > 0).length;
+  const stats = $("dash-stats");
+  stats.innerHTML = "";
+  const seg = (text, cls) => {
+    const s = document.createElement("span");
+    if (cls) s.className = cls;
+    s.textContent = text;
+    stats.appendChild(s);
+  };
+  seg(repos.length + " 个项目");
+  if (nConf) seg(nConf + " 冲突", "st-conf");
+  if (nPush) seg(nPush + " 待推送", "st-push");
+  if (nDirty) seg(nDirty + " 有更改", "st-dirty");
+  if (!nConf && !nPush && !nDirty && repos.length) seg("全部已同步", "st-clean");
+  const list = $("dash-list");
+  list.innerHTML = "";
+  for (const r of rows) list.appendChild(dashRow(r));
+}
+
+// 总览单行:图标 | 名称+分支 | 同步(↑/↓) | 更改 | 冲突 | 最近提交,点击进入项目
+function dashRow(r) {
+  const li = document.createElement("li");
+  li.className = "dash-row";
+  li.title = r.path;
+
+  const ic = document.createElement("span");
+  ic.className = "dash-icon";
+  if (r.icon) {
+    const img = document.createElement("img");
+    img.src = r.icon;
+    img.alt = "";
+    img.draggable = false;
+    ic.appendChild(img);
+  } else {
+    // 字母头像:配色与侧栏一致(按路径哈希稳定分配)
+    const c = repoAvatarColor(r.path);
+    const av = document.createElement("span");
+    av.className = "repo-avatar";
+    av.style.background = c.bg;
+    av.style.color = c.fg;
+    av.textContent = ((r.name || r.path).trim().charAt(0) || "?").toUpperCase();
+    ic.appendChild(av);
+  }
+
+  const main = document.createElement("div");
+  main.className = "dash-main";
+  const name = document.createElement("span");
+  name.className = "dash-name";
+  name.textContent = r.name;
+  main.appendChild(name);
+  if (r.is_repo) {
+    const branch = document.createElement("span");
+    branch.className = "dash-branch";
+    branch.textContent = r.branch || "（分离）";
+    main.appendChild(branch);
+  } else {
+    const tag = document.createElement("span");
+    tag.className = "dash-branch";
+    tag.textContent = "非 Git 仓库";
+    main.appendChild(tag);
+  }
+
+  const sync = document.createElement("span");
+  sync.className = "dash-cell";
+  if (r.is_repo) {
+    if (r.ahead > 0) sync.appendChild(dashBadge("↑" + r.ahead, "push", "本地领先 " + r.ahead + " 个提交，可推送"));
+    if (r.behind > 0) sync.appendChild(dashBadge("↓" + r.behind, "pull", "远程领先 " + r.behind + " 个提交，可拉取"));
+  }
+
+  const dirty = document.createElement("span");
+  dirty.className = "dash-cell";
+  if (r.is_repo && r.staged + r.unstaged > 0) {
+    dirty.appendChild(dashBadge(r.staged + r.unstaged + " 处更改", "dirty", "未提交的本地修改（暂存 " + r.staged + " · 更改 " + r.unstaged + "）"));
+  }
+
+  const conf = document.createElement("span");
+  conf.className = "dash-cell";
+  if (r.conflicts > 0) conf.appendChild(dashBadge(r.conflicts + " 冲突", "conf", "合并冲突待解决"));
+
+  const time = document.createElement("span");
+  time.className = "dash-time";
+  if (r.is_repo) {
+    if (r.last_commit_ts) {
+      time.textContent = relTimeShort(r.last_commit_ts);
+      time.title = relTime(r.last_commit_ts);
+    } else {
+      time.textContent = "无提交";
+    }
+  }
+
+  li.append(ic, main, sync, dirty, conf, time);
+  li.addEventListener("click", () => switchRepo(r.path));
+  return li;
+}
+
+function dashBadge(text, cls, title) {
+  const b = document.createElement("span");
+  b.className = "dash-badge " + cls;
+  b.textContent = text;
+  if (title) b.title = title;
+  return b;
 }
 
 /* ===== 历史(本地/远程并排) ===== */
@@ -1074,6 +1226,7 @@ async function deleteCheckpoint(id) {
 }
 
 async function showEmpty(showInit) {
+  leaveOverview();
   // 无项目时隐藏标题栏;当前选中项不是 Git 仓库时仍保留(项目已选定)
   $("project-header").classList.toggle("hidden", !repo);
   $("panel").classList.add("hidden");

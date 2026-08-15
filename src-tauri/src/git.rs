@@ -550,6 +550,15 @@ pub fn recent_log(repo: &str, n: usize) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// 最近一次提交的 unix 时间戳(秒);非仓库/空仓库返回 None
+pub fn last_commit_ts(repo: &str) -> Option<i64> {
+    run_git(repo, &["log", "-1", "--format=%ct"])
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
 #[derive(Serialize, Clone)]
 pub struct CommitInfo {
     pub hash: String,
@@ -761,6 +770,23 @@ mod tests {
         assert!(d_staged.contains("a.txt"));
         assert!(!d_staged.contains("b.txt"));
 
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn last_commit_ts_tracks_head() {
+        let repo = temp_repo("last-ts");
+        let r = repo.to_str().unwrap();
+        assert!(last_commit_ts(r).is_none(), "空仓库应返回 None");
+        std::fs::write(repo.join("a.txt"), "hi").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "init").unwrap();
+        let ts = last_commit_ts(r).expect("有提交后应返回时间戳");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert!(ts > 0 && ts <= now + 5, "时间戳应落在合理区间: {ts} vs {now}");
         std::fs::remove_dir_all(repo).ok();
     }
 
