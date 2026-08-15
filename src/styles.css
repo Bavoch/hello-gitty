@@ -9,7 +9,7 @@
   --text-dim: #8a8a8a;
   --text-head: #bbbbbb;
   --accent: #6366f1;   /* 与 logo 渐变的 indigo-500 一致 */
-  --accent-hover: #7a6df6; /* indigo → violet 过渡 */
+  --accent-hover: #4f46e5; /* indigo-600:主题色按钮悬停时在原色基础上变深变暗 */
   --accent-bright: #8b8af7; /* 悬停操作文字按钮:比主题色稍亮,便于在深底上辨识 */
   --green: #89d185;
   --red: #f48771;
@@ -17,6 +17,7 @@
   --orange: #cc7832;
   --blue: #75beff;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", "Microsoft YaHei", monospace;
+  --bar-h: 38px; /* 底部操作栏统一高度(左侧设置栏 / 右侧运行栏) */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -78,13 +79,13 @@ select option { background: #3c3c3c; color: var(--text); }
 .icon-btn.active:hover { color: var(--accent); background: #6366f11a; }
 .icon-btn.active svg { transform: rotate(45deg); }
 
-/* ===== 项目标题栏(图标 + 名称 + 分支) ===== */
+/* ===== 项目标题栏(图标 + 名称 + 分支 + 运行) ===== */
 #project-header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: flex-start;
   gap: 10px; padding: 8px 12px;
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
-.proj-identity { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; }
+.proj-identity { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 0 1 auto; }
 .proj-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .proj-icon-wrap {
   width: 26px; height: 26px; flex: none;
@@ -126,6 +127,13 @@ select option { background: #3c3c3c; color: var(--text); }
 }
 .btn-count.push { background: var(--blue); color: #1e1e1e; }
 .btn-count.pull { background: var(--red); color: #fff; }
+
+/* 按钮/菜单项悬停过渡:背景与边框文字色平滑变化(轻量 0.15s) */
+.tool-btn, .icon-btn, .mini-btn, #btn-run, .run-caret,
+.run-menu .run-menu-item, .ctx-menu button, .more-menu button,
+.branch-item, .repo-item {
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
 
 /* 幽灵按钮:透明底 + 描边 + 图标文字;悬停只变背景,边框保持不变 */
 .tool-btn {
@@ -184,7 +192,7 @@ select option { background: #3c3c3c; color: var(--text); }
 .branch-none { padding: 4px 8px; font-size: 12px; color: var(--text-dim); }
 
 /* 分支下拉面板(轻量,锚定在分支按钮下方) */
-.branch-wrap { position: relative; }
+.branch-wrap { position: relative; flex: none; }
 /* 分支菜单加载/失败占位:居中显示 */
 .branch-loading {
   display: flex; align-items: center; justify-content: center;
@@ -240,12 +248,10 @@ select option { background: #3c3c3c; color: var(--text); }
   position: absolute; top: 0; bottom: 0; right: -1.5px;
   width: 3px; cursor: col-resize;
   background: transparent;
-  transition: background .12s;
   z-index: 30;
 }
-/* 拖动热区(左右各 2px),视觉仍保持 3px 细线 */
+/* 拖动热区(左右各 2px),全程透明,不显示指示线 */
 #sidebar-resizer::before { content: ""; position: absolute; inset: 0 -2px; }
-#sidebar-resizer:hover, #sidebar-resizer.dragging { background: var(--accent); }
 body.resizing { cursor: col-resize; user-select: none; }
 .sidebar-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -270,12 +276,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .sidebar-head .icon-btn { width: 26px; height: 26px; }
 #repo-list { list-style: none; overflow-y: auto; flex: 1; }
 .repo-item {
-  padding: 8px 10px; cursor: pointer; border-left: 2px solid transparent;
+  margin: 1px 8px; padding: 8px 10px; cursor: pointer;
+  border-radius: 6px; /* 圆角悬浮块,非通栏 */
   display: grid; grid-template-columns: 30px 1fr; align-items: center; gap: 6px;
   user-select: none;
 }
 .repo-item:hover { background: var(--hover); }
-.repo-item.active { border-left-color: var(--accent); background: #6366f11a; }
+.repo-item.active { background: #6366f133; }
 /* 拖拽排序:被拖项半透明,落点用主题色细线指示(上沿/下沿) */
 .repo-item.dragging { opacity: 0.35; }
 .repo-item.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
@@ -307,6 +314,8 @@ body.resizing { cursor: col-resize; user-select: none; }
   display: flex; align-items: center; gap: 2px;
   padding: 6px 8px; border-top: 1px solid var(--border); margin-top: auto;
 }
+/* 展开态与运行栏等高;收起态(纵向堆叠)保持自适应 */
+#sidebar:not(.collapsed) .sidebar-footer { height: var(--bar-h); padding-block: 0; }
 
 #empty-state {
   height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -334,16 +343,18 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .section.collapsed .caret { transform: rotate(-90deg); }
 /* 分组计数:默认简洁灰数字(版本计数,以及暂存/更改为 0 时);
-   有改动时追加 .badge 变为蓝色胶囊标签,配色与推送按钮角标(.btn-count.push)一致 */
+   有改动时追加 .badge 变为蓝色圆角矩形标签(宽度随文字自适应),配色与推送按钮角标(.btn-count.push)一致 */
 .count {
   color: var(--text-dim); font-size: 12px; font-weight: 400;
   line-height: 1; letter-spacing: 0;
 }
 .count.badge {
+  /* 自包含,显式覆盖通用 .badge 的固定 width:16px → 宽度随数字位数自适应 */
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
   background: var(--blue); color: #1e1e1e;
-  font-size: 10px; font-weight: 700; line-height: 14px;
-  min-width: 16px; padding: 0 5px;
-  border-radius: 8px; text-align: center;
+  font-size: 10px; font-weight: 700; line-height: 14px; height: 16px;
+  padding: 0 5px;
+  border-radius: 3px; width: auto;
 }
 .section-actions { display: none; padding: 4px 12px 6px; background: var(--panel); }
 .section.has-conflicts .section-actions { display: block; }
@@ -431,6 +442,20 @@ body.resizing { cursor: col-resize; user-select: none; }
 .more-menu button:hover { background: var(--hover-strong); color: var(--text); }
 .more-menu button:hover svg { opacity: 1; }
 .more-menu .danger-item { color: var(--text); }
+
+/* ===== 侧栏右键菜单(跟随鼠标,样式与下拉菜单一致) ===== */
+.ctx-menu {
+  position: fixed; z-index: 100;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  min-width: 128px; padding: 4px; box-shadow: 0 4px 16px #00000066;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.ctx-menu button {
+  display: flex; align-items: center; gap: 8px;
+  text-align: left; padding: 6px 10px; border-radius: 4px;
+  font-size: 13px; color: var(--text);
+}
+.ctx-menu button:hover { background: var(--hover-strong); color: var(--text); }
 .spinner {
   width: 11px; height: 11px; border: 2px solid var(--text-dim); border-top-color: transparent;
   border-radius: 50%; display: inline-block; animation: spin .7s linear infinite;
@@ -619,25 +644,16 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-/* ===== 运行服务器面板(底部可折叠) ===== */
+/* ===== 运行服务器面板(底部):标题栏常驻,日志区可展开/收起 ===== */
 #run-panel {
-  flex: none; height: 220px;
-  display: flex; flex-direction: column;
+  flex: none; display: flex; flex-direction: column;
   background: var(--panel); border-top: 1px solid var(--border);
 }
+#run-panel:not(.closed) { height: 220px; }
+#run-panel.closed .run-log { display: none; }
 .run-head {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 10px; border-bottom: 1px solid var(--border);
-}
-/* 状态圆点:未运行灰、运行中绿(脉冲) */
-.run-dot {
-  width: 8px; height: 8px; border-radius: 50%; flex: none;
-  background: var(--text-dim);
-}
-.run-dot.running { background: var(--green); animation: run-pulse 1.4s ease-in-out infinite; }
-@keyframes run-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 #89d18566; }
-  50% { box-shadow: 0 0 0 4px #89d18500; }
+  height: var(--bar-h); padding: 0 10px; border-bottom: 1px solid var(--border);
 }
 .run-cmd-input {
   flex: 1; min-width: 0;
@@ -653,6 +669,46 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .run-log .err { color: var(--red); }
 .run-log .sys { color: var(--text-dim); }
-/* 工具栏运行按钮:运行中态 */
-#btn-run.running { color: var(--green); border-color: #89d18555; }
-#btn-run.running .run-label { color: var(--green); }
+/* 日志区展开/收起箭头:默认向上(收起=可向上展开),展开后翻转朝下(可收起) */
+.run-collapse svg { transition: transform .15s ease; }
+#run-panel:not(.closed) .run-collapse svg { transform: rotate(180deg); }
+/* 运行按钮 + 命令下拉融合为一个整体按钮:wrap 提供边框圆角,内部两区透明,
+   主体(左)=运行/停止、箭头(右,1px 分隔线)=展开候选,悬停各自高亮 */
+.run-btn-wrap {
+  position: relative; flex: none; display: inline-flex; align-items: stretch;
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.run-btn-wrap.running { border-color: #89d18555; }
+#btn-run, .run-caret {
+  border: none; background: transparent; border-radius: 0;
+  display: inline-flex; align-items: center; color: var(--text);
+}
+#btn-run { gap: 5px; padding: 4px 10px; font-size: 13px; }
+#btn-run:hover:not(:disabled) { background: var(--hover-strong); }
+#btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+.run-caret { padding: 4px 7px; border-left: 1px solid var(--border); color: var(--text-dim); }
+.run-caret:hover { background: var(--hover-strong); color: var(--text); }
+#btn-run.running, #btn-run.running ~ .run-caret { color: var(--green); }
+/* 运行命令选择下拉 */
+.run-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  min-width: 200px; max-width: 280px; padding: 4px;
+  box-shadow: 0 4px 16px #00000066;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.run-menu .run-menu-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  text-align: left; padding: 5px 10px; border-radius: 4px;
+  font-size: 13px; color: var(--text);
+}
+.run-menu .run-menu-item:hover { background: var(--hover-strong); }
+.run-menu .run-cmd-text {
+  font-family: var(--mono); font-size: 12.5px; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.run-menu .run-cmd-src {
+  font-size: 11px; color: var(--text-dim); max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.run-menu .run-menu-empty { padding: 8px 10px; font-size: 12px; color: var(--text-dim); }
