@@ -9,7 +9,9 @@
     // 仅开发模式(http://localhost:1421)生效:检测源文件变更后自动刷新窗口
     if (location.protocol === "http:") {
       (function () {
-        const files = ["index.html", "styles.css", "main.js"];
+        const files = ["index.html", "styles.css", "main.js",
+          "js/state.js", "js/sidebar.js", "js/panel.js", "js/git-ops.js",
+          "js/history.js", "js/run-panel.js", "js/dashboard.js"];
         const mtimes = {};
         setInterval(async () => {
           for (const f of files) {
@@ -439,6 +441,6 @@
     <button id="ctx-close">关闭项目</button>
   </div>
 
-  <script src="main.js?v=20260815110000"></script>
+  <script type="module" src="main.js?v=20260815120000"></script>
 </body>
 </html>
