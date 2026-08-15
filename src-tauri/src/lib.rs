@@ -125,7 +125,6 @@ fn chrome_manifest_icon(repo_path: &std::path::Path) -> Option<String> {
 /// 读取项目图标文件,转为 base64 data URL;
 /// 找不到真实图标时返回 None(前端渲染「首字符 + 稳定配色」字母头像)
 fn repo_icon_data_url(repo: &str) -> Option<String> {
-    use base64::Engine as _;
     let repo_path = std::path::Path::new(repo);
     // 1. Chrome 扩展 manifest.json 声明(最精确)
     if let Some(url) = chrome_manifest_icon(repo_path) {
