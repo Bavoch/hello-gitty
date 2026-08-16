@@ -642,6 +642,7 @@ pub fn log(repo: &str, n: usize) -> Vec<CommitInfo> {
 }
 
 /// 指定 ref(分支/远程分支)的历史
+/// 记录以 NUL 分隔、字段以 \t 分隔:提交信息正文含换行,按行分割会把一条提交拆成多条。
 pub fn log_ref(repo: &str, r: &str, n: usize) -> Vec<CommitInfo> {
     run_git(
         repo,
@@ -649,13 +650,13 @@ pub fn log_ref(repo: &str, r: &str, n: usize) -> Vec<CommitInfo> {
             "log",
             &format!("-{n}"),
             r,
-            "--format=%H%x09%h%x09%an%x09%at%x09%s%x09%b",
+            "--format=%H%x09%h%x09%an%x09%at%x09%s%x09%b%x00",
         ],
     )
     .map(|o| {
-        o.lines()
-            .filter_map(|l| {
-                let mut p = l.splitn(6, '\t');
+        o.split('\0')
+            .filter_map(|rec| {
+                let mut p = rec.splitn(6, '\t');
                 Some(CommitInfo {
                     hash: p.next()?.to_string(),
                     short: p.next()?.to_string(),

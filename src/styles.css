@@ -46,7 +46,7 @@ input, select, textarea {
   border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; outline: none;
   user-select: text; -webkit-user-select: text;
 }
-input:focus, select:focus, textarea:focus { border-color: var(--text-dim); } /* 聚焦高亮用中性色,不用主题色 */
+input:focus, select:focus, textarea:focus { border-color: #5a5a5a; } /* 聚焦高亮弱化:仅比常态边框略亮,不用主题色 */
 /* select 自定义外观:去除系统箭头与样式,改用自定义箭头 */
 select {
   appearance: none; -webkit-appearance: none;
@@ -507,7 +507,7 @@ body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none
   transform: rotate(-90deg); transition: transform .12s ease;
 }
 .commit-row.expanded .commit-caret { transform: rotate(0deg); }
-.commit-caret.head { color: var(--accent); }
+/* HEAD 提交箭头与普通箭头同色(不再高亮) */
 .commit-msg {
   flex: 1; font-size: 12.5px; color: var(--text); min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -519,11 +519,11 @@ body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none
 /* 相对时间固定宽度(覆盖 12分前/12时前/12天前 等最长形态),右对齐,所有行时间列对齐 */
 .commit-time { width: 42px; text-align: right; flex: none; }
 /* 本地(分支)= 蓝色,远程(云朵)= 紫色;双槽位固定:本地恒左、远程恒右,
-   .none 用 visibility:hidden 占位(保留 11px 槽宽),单图标行不位移,所有行图标同列对齐 */
+   分支在某端不存在时图标仍显示,但用很淡的灰色(占位不位移,所有行图标同列对齐) */
 .commit-loci { display: inline-flex; align-items: center; gap: 8px; width: 30px; flex: none; }
 .commit-loci .loci-local { display: inline-flex; flex: none; color: var(--blue); }
 .commit-loci .loci-remote { display: inline-flex; flex: none; color: #c792ea; }
-.commit-loci .none { visibility: hidden; }
+.commit-loci .none { color: var(--text-dim); opacity: .45; }
 /* 回退按钮:悬停时覆盖在右侧图标/时间之上,不占布局空间;主题色 */
 .rollback {
   position: absolute; right: 0; top: 50%; transform: translateY(-50%);
@@ -534,7 +534,9 @@ body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none
 }
 .commit-row:hover .rollback { visibility: visible; background: var(--hover); }
 .rollback:hover { background: var(--panel-2); color: #a5a8ff; }
-.rollback:disabled { visibility: hidden; }
+/* 当前版本占位(HEAD):悬停随行显示,淡灰弱化,不可点击 */
+.rollback:disabled { color: var(--text-dim); opacity: .6; cursor: default; }
+.rollback:disabled:hover { background: var(--hover); color: var(--text-dim); }
 .history-none { padding: 4px 32px 8px; font-size: 12px; color: var(--text-dim); }
 
 .mono { font-family: var(--mono); color: var(--accent); }
@@ -830,7 +832,7 @@ button.repo-item.overview-item {
 }
 .dash-sort:hover { color: var(--text); }
 .dash-search::placeholder { color: var(--text-dim); }
-.dash-search:focus { border-color: var(--text-dim); }
+.dash-search:focus { border-color: #5a5a5a; }
 .dash-tab {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 12px; padding: 3px 10px; border-radius: 999px;

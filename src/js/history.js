@@ -29,7 +29,7 @@ function commitRow(c, headHash) {
   main.className = "commit-main";
 
   const caret = document.createElement("span");
-  caret.className = "commit-caret" + (isHead ? " head" : "");
+  caret.className = "commit-caret";
   caret.innerHTML = '<svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   main.appendChild(caret);
 
@@ -64,9 +64,10 @@ function commitRow(c, headHash) {
 
   const rb = document.createElement("button");
   rb.className = "rollback";
-  rb.textContent = "回退";
+  // HEAD 提交不可回退:悬停显示「当前版本」占位(禁用态),其余显示「回退」
+  rb.textContent = isHead ? "当前版本" : "回退";
   rb.disabled = isHead;
-  rb.title = isHead ? "当前提交，不可回退" : "强制回退到此版本（丢弃之后所有提交）";
+  rb.title = isHead ? "当前提交" : "强制回退到此版本（丢弃之后所有提交）";
   rb.addEventListener("click", (ev) => {
     ev.stopPropagation();
     askReset(c.hash, c.short);
