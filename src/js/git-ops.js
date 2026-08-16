@@ -37,6 +37,18 @@ export function askDiscardFile(path) {
   $("dlg-discard-all").classList.remove("hidden");
 }
 
+// 直接丢弃单个文件(右侧列表两步确认的第二步),不走对话框
+export async function discardFile(path) {
+  try {
+    const r = await invoke("git_discard_file", { repo, path });
+    if (r && r.ok === false) toast(r.output, false);
+    else toast("已丢弃该文件的更改", true);
+  } catch (e) {
+    toast(String(e), false);
+  }
+  await refresh();
+}
+
 async function doDiscardAll() {
   const btn = $("btn-discard-all");
   $("dlg-discard-all").classList.add("hidden");

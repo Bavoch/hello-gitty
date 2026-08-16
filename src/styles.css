@@ -424,6 +424,9 @@ body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none
 .file-row:hover .row-actions { display: inline-flex; background: var(--hover); }
 .row-actions button { font-size: 12px; line-height: 1.2; color: var(--accent-bright); padding: 1px 5px; border: none; border-radius: 3px; }
 .row-actions button:hover { background: var(--panel-2); color: #a5a8ff; }
+/* 丢弃两步确认:待确认态(✓)用红色强调,提醒再次点击才是真正丢弃 */
+.row-actions button.armed { color: var(--red); background: #f487711a; }
+.row-actions button.armed:hover { background: #f4877133; color: var(--red); }
 
 /* ===== 忙碌指示 ===== */
 .busy-ind {

@@ -3,7 +3,7 @@
 import { $, invoke, toast, setButtonLoading, STATUS_CHARS, repo, view, repos, lastShipStatus, setLastShipStatus, setNumBadge } from "./state.js";
 import { updateProjectHeader, renderRepoList, removeRepo } from "./sidebar.js";
 import { renderHistory } from "./history.js";
-import { toggleStage, askDiscardFile, resolveOne, stageAll, discardAll, invalidateBranchCache } from "./git-ops.js";
+import { toggleStage, discardFile, resolveOne, stageAll, discardAll, invalidateBranchCache } from "./git-ops.js";
 
 const sectionUserSet = new Set(); // 用户手动切换过的分组:自动收起规则不再覆盖其状态
 
@@ -244,11 +244,38 @@ function renderList(listId, entries, kind, countEl, mods = "") {
       ig.textContent = "忽略";
       ig.addEventListener("click", (ev) => { ev.stopPropagation(); askIgnore(e.path); });
       actions.appendChild(ig);
-      // 仅未暂存/未跟踪行提供「丢弃」(已跟踪→还原,未跟踪→删除)
+      // 仅未暂存/未跟踪行提供「丢弃」(已跟踪→还原,未跟踪→删除)。
+      // 两步确认:第一次点击变「✓」待确认态,再点一次才丢弃;悬停离开自动复位
       if (kind === "unstaged") {
         const di = document.createElement("button");
         di.textContent = "丢弃";
-        di.addEventListener("click", (ev) => { ev.stopPropagation(); askDiscardFile(e.path); });
+        let armed = false;
+        let resetTimer = null;
+        const reset = () => {
+          if (!armed) return;
+          armed = false;
+          di.textContent = "丢弃";
+          di.classList.remove("armed");
+        };
+        // 移开后延迟复位,给用户留出点击确认的时间
+        const scheduleReset = () => {
+          if (!armed) return;
+          clearTimeout(resetTimer);
+          resetTimer = setTimeout(reset, 3000);
+        };
+        di.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          if (!armed) {
+            armed = true; di.textContent = "✓"; di.classList.add("armed");
+            clearTimeout(resetTimer);
+            return;
+          }
+          clearTimeout(resetTimer);
+          reset();
+          discardFile(e.path);
+        });
+        di.addEventListener("mouseleave", scheduleReset);
+        di.addEventListener("mouseenter", () => clearTimeout(resetTimer));
         actions.appendChild(di);
       }
     }
