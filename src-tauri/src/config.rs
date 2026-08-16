@@ -15,6 +15,12 @@ pub struct Settings {
     /// 每个仓库自定义的「运行服务器」命令(路径 -> 命令),未设置时由 runner 智能识别
     #[serde(default)]
     pub run_commands: std::collections::HashMap<String, String>,
+    /// 每个仓库自定义的运行地址(路径 -> URL),未设置时用端口探测/项目文件推断
+    #[serde(default)]
+    pub run_urls: std::collections::HashMap<String, String>,
+    /// 最近使用的运行命令历史(按使用顺序,新→旧),供下拉快捷选择
+    #[serde(default)]
+    pub run_history: Vec<String>,
 }
 
 pub struct SettingsStore {
@@ -23,8 +29,13 @@ pub struct SettingsStore {
 
 impl SettingsStore {
     pub fn new(app: &tauri::AppHandle) -> Self {
-        let dir = app.path().app_config_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self { path: dir.join("settings.json") }
+        let dir = app
+            .path()
+            .app_config_dir()
+            .unwrap_or_else(|_| PathBuf::from("."));
+        Self {
+            path: dir.join("settings.json"),
+        }
     }
 
     pub fn load(&self) -> Settings {

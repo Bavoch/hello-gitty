@@ -1,6 +1,6 @@
 /* 侧栏:项目列表(渲染/拖拽排序/右键菜单/宽度模式) + 项目管理(打开/添加/克隆/移除/初始化)
    + 仓库摘要加载(loadRepos) + 后台 fetch + 仓库切换 */
-import { $, invoke, toast, setButtonLoading, repoAvatarColor, settings, repos, repo, view, setRepos, setRepo } from "./state.js";
+import { $, invoke, toast, setButtonLoading, repoAvatarColor, settings, repos, repo, view, setRepos, setRepo, setNumBadge } from "./state.js";
 import { refresh, showRefreshing } from "./panel.js";
 import { syncRunPanel } from "./run-panel.js";
 
@@ -9,9 +9,9 @@ const SIDEBAR_COMPACT_MAX = 96; // 简洁展示的宽度上限(含);更宽自动
 
 let fetching = false; // 后台 fetch 防重入:定时器与手动刷新共用
 let ctxRepo = null; // 右键菜单当前目标项目路径(仅菜单打开期间有效)
-let lastStatus = null; // 当前仓库最新修改计数(暂存/更改/冲突),供侧栏状态行显示
 let dragPath = null; // 正在拖拽的项目路径
 let dragState = null; // pointerdown 待定状态(移动超过阈值前不视为拖拽)
+let dragGhost = null; // 跟随指针的拖拽缩略图(克隆被拖项)
 let suppressClick = false; // 拖拽结束后抑制一次合成 click,避免误切仓库
 
 /* ===== 项目管理 ===== */
@@ -150,14 +150,15 @@ export async function initRepo() {
 }
 
 /* ===== 列表渲染 ===== */
-export function renderRepoList() {
+export function renderRepoList(keepScroll = false) {
   const ul = $("repo-list");
+  const scrollTop = ul.scrollTop; // 整表重建会重置滚动,保存并在渲染后恢复(拖拽排序/后台刷新不跳动)
   ul.innerHTML = "";
   $("sidebar-empty").classList.toggle("hidden", repos.length > 0);
-  $("overview-meta").textContent = repos.length ? repos.length + " 个项目" : "";
   for (const r of repos) {
     const li = document.createElement("li");
-    li.className = "repo-item" + (r.path === repo ? " active" : "");
+    // 总览视图下不标记任何项目为选中(选中态属于「总览」入口),避免重渲染时残留旧高亮
+    li.className = "repo-item" + (view === "repo" && r.path === repo ? " active" : "");
     li.title = r.is_repo ? r.path : r.path + " · 不是 Git 仓库";
     li.dataset.path = r.path; // 拖拽落点定位用
 
@@ -180,6 +181,13 @@ export function renderRepoList() {
       av.textContent = ((r.name || r.path).trim().charAt(0) || "?").toUpperCase();
       ic.appendChild(av);
     }
+    // 图标右上角更改数角标(更改+冲突;暂存不计;0 不显示)
+    const dirty = (r.unstaged || 0) + (r.conflicts || 0);
+    if (dirty > 0) {
+      const badge = document.createElement("span");
+      ic.appendChild(badge);
+      setNumBadge(badge, dirty, "repo-icon-badge");
+    }
 
     const info = document.createElement("div");
     info.className = "repo-info";
@@ -187,21 +195,6 @@ export function renderRepoList() {
     name.className = "repo-name";
     name.textContent = r.name;
     info.appendChild(name);
-    const meta = document.createElement("div");
-    meta.className = "repo-meta";
-    if (r.is_repo) {
-      // 所有 Git 项目:第二行显示本地修改情况(暂存/更改计数或已全部提交)
-      // 当前项目用最新刷新计数,其他项目用扫描摘要计数(后端已合并未跟踪)
-      const c = r.path === repo && lastStatus
-        ? lastStatus
-        : { staged: r.staged, changed: r.unstaged, conflicts: r.conflicts };
-      meta.textContent = repoStatusText(c);
-    } else {
-      // 非 Git 项目:第二行展示项目路径;过长时按可用宽度智能省略(见 fitPath)
-      meta.dataset.path = r.path;
-      meta.textContent = r.path;
-    }
-    info.append(name, meta);
 
     li.append(ic, info);
     li.addEventListener("click", () => {
@@ -221,48 +214,12 @@ export function renderRepoList() {
     });
     ul.appendChild(li);
   }
-  fitAllPaths(); // 渲染完成后按当前侧栏宽度做路径智能省略
+  ul.scrollTop = scrollTop; // 恢复原滚动位置(整表重建会重置)
+  // 拖拽重排(keepScroll):严格停在原位置,不做当前项滚动(选中项不在视口时会拉走视图)
+  if (keepScroll) return;
   // 当前项(含新添加的项目)滚动到可视区,避免列表末尾新项在滚动区外不可见
   const active = ul.querySelector(".repo-item.active");
   if (active) active.scrollIntoView({ block: "nearest" });
-}
-
-// 路径智能省略:完整路径放得下就完整显示;放不下时保留「开头 + … + 结尾目录名」,
-// 开头保留盘符/根路径,结尾保留项目目录名(与第一行项目名呼应),只省略中间不重要的部分。
-function fitPath(el, path) {
-  el.textContent = path;
-  if (el.scrollWidth <= el.clientWidth + 1) return; // 完整显示
-  // 按最后一个分隔符拆出「结尾目录名」与「其余部分」
-  const sepIdx = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
-  if (sepIdx <= 0 || sepIdx === path.length - 1) return; // 无有效目录名,交给 CSS 尾部省略
-  const head = path.slice(0, sepIdx); // 不含末尾分隔符
-  const tail = path.slice(sepIdx);    // 含分隔符,如 \hello-gitty
-  // 二分查找:head 保留多少字符时 head + … + tail 恰好放得下
-  let lo = 0, hi = head.length;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    el.textContent = head.slice(0, mid) + "…" + tail;
-    if (el.scrollWidth <= el.clientWidth + 1) lo = mid; else hi = mid - 1;
-  }
-  el.textContent = head.slice(0, lo) + "…" + tail;
-  // 极窄侧栏:连「… + 目录名」都放不下时,退化为「开头 + …」(项目名已在第一行)
-  if (lo === 0 && el.scrollWidth > el.clientWidth + 1) {
-    let a = 0, b = path.length;
-    while (a < b) {
-      const mid = (a + b + 1) >> 1;
-      el.textContent = path.slice(0, mid) + "…";
-      if (el.scrollWidth <= el.clientWidth + 1) a = mid; else b = mid - 1;
-    }
-    el.textContent = path.slice(0, a) + "…";
-  }
-}
-
-// 侧栏宽度变化(拖拽调整、初始布局)后,重新对所有路径做智能省略
-export function fitAllPaths() {
-  for (const el of $("repo-list").querySelectorAll(".repo-meta")) {
-    if (!el.dataset.path) continue; // 当前项目的状态文本行不参与路径省略
-    fitPath(el, el.dataset.path || "");
-  }
 }
 
 // 按当前宽度自动切换简洁(仅图标)与全面(名称+路径)展示。
@@ -281,41 +238,13 @@ export function applySidebarMode() {
   return compact;
 }
 
-// 切换仓库时只更新高亮与滚动,不重建列表;当前项状态行由 refresh 完成后的 updateSidebarCurrent 就地更新
+// 切换仓库时只更新高亮与滚动,不重建列表
 export function updateSidebarActive(path) {
   for (const li of $("repo-list").children) {
     li.classList.toggle("active", li.dataset.path === path);
   }
   const active = $("repo-list").querySelector(".repo-item.active");
   if (active) active.scrollIntoView({ block: "nearest" });
-}
-
-// 用已拿到的状态就地更新侧栏当前仓库项(只改 meta 文本与 title,不重建列表,避免闪烁)
-export function updateSidebarCurrent(st) {
-  lastStatus = {
-    staged: st.staged.length,
-    changed: st.unstaged.length + st.untracked.length,
-    conflicts: st.conflicts.length,
-  };
-  const idx = repos.findIndex((r) => r.path === repo);
-  if (idx < 0) return;
-  repos[idx] = { ...repos[idx], is_repo: st.is_repo };
-  let li = null;
-  for (const el of $("repo-list").children) {
-    if (el.dataset.path === repo) { li = el; break; }
-  }
-  if (!li) return;
-  li.title = st.is_repo ? repo : repo + " · 不是 Git 仓库";
-  const meta = li.querySelector(".repo-meta");
-  if (meta) meta.textContent = repoStatusText(lastStatus);
-}
-
-// 侧栏项目第二行:本地修改情况(暂存:N，更改:N;全部干净时显示已全部提交)
-function repoStatusText(c) {
-  if (c.staged === 0 && c.changed === 0 && c.conflicts === 0) return "已全部提交";
-  let t = "暂存：" + c.staged + "，更改：" + c.changed;
-  if (c.conflicts > 0) t += "，冲突：" + c.conflicts;
-  return t;
 }
 
 // 顶部标题栏:当前项目图标 + 名称(数据复用侧栏仓库摘要,无需额外请求)
@@ -348,11 +277,14 @@ export function updateProjectHeader() {
 }
 
 /* ===== 右键菜单 ===== */
-// 在鼠标位置弹出侧栏右键菜单,位置钳制在视口内
-function openCtxMenu(x, y, path) {
+// 在鼠标位置弹出侧栏右键菜单,位置钳制在视口内(卡片「更多」按钮也复用此菜单)
+export function openCtxMenu(x, y, path) {
   const menu = $("ctx-menu");
   ctxRepo = path;
   menu.classList.remove("hidden");
+  // 清掉弹窗前可能残留的文本选区(侧栏虽禁用选择,但右键拖选仍可能在部分平台留下选区)
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed) sel.removeAllRanges();
   const r = menu.getBoundingClientRect();
   menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 4)) + "px";
   menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 4)) + "px";
@@ -387,14 +319,29 @@ function onRepoDragMove(e) {
     if (dx * dx + dy * dy < 16) return; // 4px 阈值:与点击区分
     dragPath = dragState.path;
     dragState.li.classList.add("dragging");
+    createDragGhost();
   }
   e.preventDefault(); // 抑制拖动过程中浏览器的默认文本选中
+  moveDragGhost(e.clientX, e.clientY);
   clearDropIndicators();
   const target = repoItemAtY(e.clientY);
   if (target && target !== dragState.li) {
     const rect = target.getBoundingClientRect();
     target.classList.add(e.clientY - rect.top < rect.height / 2 ? "drop-above" : "drop-below");
   }
+}
+
+// 缩略图:克隆被拖项为实底卡片跟随指针;挂在 body 下不参与落点计算(pointer-events: none)
+function createDragGhost() {
+  dragGhost = dragState.li.cloneNode(true);
+  dragGhost.className = "repo-item repo-drag-ghost"; // 重置类:不带 dragging/选中态
+  dragGhost.style.width = dragState.li.offsetWidth + "px";
+  document.body.appendChild(dragGhost);
+}
+function moveDragGhost(x, y) {
+  if (!dragGhost) return;
+  dragGhost.style.left = x + "px";
+  dragGhost.style.top = y + "px";
 }
 
 // 拖拽松手:按落点重排,并复位状态
@@ -410,6 +357,7 @@ function onRepoDragUp(e) {
     suppressClick = true;
     dragPath = null;
   }
+  if (dragGhost) { dragGhost.remove(); dragGhost = null; }
   dragState = null;
 }
 
@@ -427,13 +375,16 @@ function reorderRepo(srcPath, targetPath, before) {
   // settings.repos 仅存路径,顺序即展示顺序;重排后持久化,下次加载沿用
   settings.repos = repos.map((r) => r.path);
   invoke("settings_save", { settings }).catch(() => {});
-  renderRepoList();
+  renderRepoList(true); // 保持滚动位置:拖拽落定视图不跳动
 }
 
 /* ===== 事件绑定 ===== */
 export function bindSidebarEvents() {
   $("btn-open2").addEventListener("click", openLocalRepo);
   $("btn-add-repo").addEventListener("click", async () => {
+    setRepo(null); // 进入「新建项目」态:取消旧选中,标题栏与工具栏隐藏,右侧面板显示空态
+    renderRepoList(); // 清掉列表旧选中高亮
+    syncRunPanel(); // 清空底部运行栏(旧项目的命令与日志)
     const { showEmpty } = await import("./panel.js");
     showEmpty(false);
   });
@@ -489,9 +440,8 @@ export function bindSidebarEvents() {
     document.addEventListener("pointerup", endSidebarDrag, { once: true });
   });
 
-  // 侧栏宽度变化(拖拽调整、收起切换、初始布局)时:
-  // 自动切换简洁/全面展示,并重新按可用宽度省略路径文本
-  new ResizeObserver(() => { applySidebarMode(); fitAllPaths(); }).observe($("sidebar"));
+  // 侧栏宽度变化(拖拽调整、收起切换、初始布局)时自动切换简洁/全面展示
+  new ResizeObserver(() => { applySidebarMode(); }).observe($("sidebar"));
 
   // 侧栏拖拽排序:按下在各 li,移动/松手由文档统一接收(指针移出原项也能持续追踪)
   document.addEventListener("pointermove", onRepoDragMove);

@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
@@ -92,42 +92,6 @@ pub fn run_git(repo: &str, args: &[&str]) -> Result<String, String> {
     run_git_impl(repo, args, false)
 }
 
-/// 同 run_git,但额外注入环境变量(用于 GIT_INDEX_FILE 指向临时 index,
-/// 构造含未跟踪文件的工作区快照而不污染真 index)。复用同一把仓库锁与 index.lock 重试。
-pub fn run_git_env(repo: &str, args: &[&str], env: &[(&str, &str)]) -> Result<String, String> {
-    run_git_env_impl(repo, args, env, false)
-}
-
-fn run_git_env_impl(repo: &str, args: &[&str], env: &[(&str, &str)], retried: bool) -> Result<String, String> {
-    let lock = repo_git_lock(repo);
-    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let res = run_git_with_env(repo, args, env);
-    if !retried {
-        if let Err(e) = &res {
-            if is_lock_error(e) && remove_stale_index_lock(repo) {
-                drop(_guard);
-                return run_git_env_impl(repo, args, env, true);
-            }
-        }
-    }
-    res
-}
-
-fn run_git_with_env(repo: &str, args: &[&str], env: &[(&str, &str)]) -> Result<String, String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C").arg(repo).args(args);
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
-    let out = cmd.output().map_err(|e| format!("无法执行 git： {e}"))?;
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        return Err(if stderr.trim().is_empty() { stdout } else { stderr }.trim().to_string());
-    }
-    Ok(stdout)
-}
-
 fn run_git_impl(repo: &str, args: &[&str], retried: bool) -> Result<String, String> {
     let lock = repo_git_lock(repo);
     let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -153,7 +117,13 @@ fn run_git_inner(repo: &str, args: &[&str]) -> Result<String, String> {
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        return Err(if stderr.trim().is_empty() { stdout } else { stderr }.trim().to_string());
+        return Err(if stderr.trim().is_empty() {
+            stdout
+        } else {
+            stderr
+        }
+        .trim()
+        .to_string());
     }
     Ok(stdout)
 }
@@ -194,11 +164,19 @@ fn git_stdin_inner(repo: &str, args: &[&str], input: &str) -> Result<String, Str
         .unwrap()
         .write_all(input.as_bytes())
         .map_err(|e| format!("写入失败： {e}"))?;
-    let out = child.wait_with_output().map_err(|e| format!("等待 git 失败： {e}"))?;
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("等待 git 失败： {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        return Err(if stderr.trim().is_empty() { stdout } else { stderr }.trim().to_string());
+        return Err(if stderr.trim().is_empty() {
+            stdout
+        } else {
+            stderr
+        }
+        .trim()
+        .to_string());
     }
     Ok(stdout)
 }
@@ -270,7 +248,11 @@ pub fn status(repo: &str) -> RepoStatus {
             continue;
         }
         if let Some(rest) = line.strip_prefix("# branch.head ") {
-            st.branch = if rest == "(detached)" { None } else { Some(rest.to_string()) };
+            st.branch = if rest == "(detached)" {
+                None
+            } else {
+                Some(rest.to_string())
+            };
             st.detached = rest == "(detached)";
             continue;
         }
@@ -326,9 +308,17 @@ pub fn status(repo: &str) -> RepoStatus {
             let path = unquote(parts.nth(6).unwrap_or(""));
             let x = xy.chars().next().unwrap_or('.').to_string();
             let y = xy.chars().nth(1).unwrap_or('.').to_string();
-            let e = FileEntry { path, x: x.clone(), y: y.clone(), ..Default::default() };
+            let e = FileEntry {
+                path,
+                x: x.clone(),
+                y: y.clone(),
+                ..Default::default()
+            };
             if x != "." && x != "?" {
-                st.staged.push(FileEntry { staged: true, ..e.clone() });
+                st.staged.push(FileEntry {
+                    staged: true,
+                    ..e.clone()
+                });
             }
             if y != "." {
                 st.unstaged.push(e);
@@ -347,14 +337,40 @@ pub fn status(repo: &str) -> RepoStatus {
             };
             let x = xy.chars().next().unwrap_or('.').to_string();
             let y = xy.chars().nth(1).unwrap_or('.').to_string();
-            let e = FileEntry { path, orig_path: orig, x: x.clone(), y: y.clone(), ..Default::default() };
+            let e = FileEntry {
+                path,
+                orig_path: orig,
+                x: x.clone(),
+                y: y.clone(),
+                ..Default::default()
+            };
             if x != "." && x != "?" {
-                st.staged.push(FileEntry { staged: true, ..e.clone() });
+                st.staged.push(FileEntry {
+                    staged: true,
+                    ..e.clone()
+                });
             }
             if y != "." {
                 st.unstaged.push(e);
             }
             continue;
+        }
+    }
+    // 忽略规则生效后,命中文件会被移出跟踪(rm --cached),在提交前留下
+    // "暂存的删除"记录;这些文件即将退出跟踪且已被忽略,不再显示在暂存列表
+    let dels: Vec<String> = st
+        .staged
+        .iter()
+        .filter(|e| e.x == "D" && e.y == ".")
+        .map(|e| e.path.clone())
+        .collect();
+    if !dels.is_empty() {
+        let mut args: Vec<&str> = vec!["check-ignore", "--"];
+        args.extend(dels.iter().map(String::as_str));
+        if let Ok(ign) = run_git(repo, &args) {
+            let ignored: Vec<String> = ign.lines().map(unquote).collect();
+            st.staged
+                .retain(|e| !(e.x == "D" && e.y == "." && ignored.contains(&e.path)));
         }
     }
     // 增删行数:暂存取 index↔HEAD,更改(已跟踪)取 worktree↔index
@@ -363,7 +379,10 @@ pub fn status(repo: &str) -> RepoStatus {
     // 未跟踪文件:整文件视为新增(行数=文件行数;过大或二进制则留 0)
     for e in &mut st.untracked {
         let p = std::path::Path::new(repo).join(&e.path);
-        if std::fs::metadata(&p).map(|m| m.len() <= 512 * 1024).unwrap_or(false) {
+        if std::fs::metadata(&p)
+            .map(|m| m.len() <= 512 * 1024)
+            .unwrap_or(false)
+        {
             if let Ok(s) = std::fs::read_to_string(&p) {
                 e.added = s.lines().count() as i32;
             }
@@ -434,21 +453,38 @@ pub fn unstage_file(repo: &str, path: &str) -> Result<(), String> {
     }
 }
 
-/// 把单个文件从 git 跟踪中移除(仅删 index,保留工作区文件)。
-/// 已跟踪/已暂存文件仅靠 .gitignore 不会从 git status 消失,需先从 index 移除
-/// 才会被忽略;--ignore-unmatch 保证文件不在 index(未跟踪)时也不报错。
-pub fn untrack_file(repo: &str, path: &str) -> Result<(), String> {
-    run_git(repo, &["rm", "--cached", "--quiet", "--ignore-unmatch", "--", path]).map(|_| ())
-}
-
-// 放弃所有未暂存的工作区修改:把已跟踪文件还原到索引状态
-// 不动未跟踪文件(它们属于"新建",非"修改"),也不影响已暂存内容
-pub fn discard_all_changes(repo: &str) -> Result<(), String> {
-    let st = status(repo);
-    if st.unstaged.is_empty() {
+/// 把所有"已跟踪且命中忽略规则"的文件移出跟踪(仅删 index,保留工作区文件)。
+/// .gitignore 对已跟踪/已暂存文件不生效,需移出跟踪才会被忽略;
+/// ls-files -c -i --exclude-standard 一次取全(含目录/通配规则覆盖的其他文件)。
+pub fn untrack_ignored(repo: &str) -> Result<(), String> {
+    let out = run_git(repo, &["ls-files", "-c", "-i", "--exclude-standard", "-z"])?;
+    let paths: Vec<&str> = out
+        .split_terminator('\0')
+        .filter(|p| !p.is_empty())
+        .collect();
+    if paths.is_empty() {
         return Ok(());
     }
-    run_git(repo, &["restore", "--", "."]).map(|_| ())
+    let mut args: Vec<&str> = vec!["rm", "--cached", "--quiet", "--"];
+    args.extend(paths);
+    run_git(repo, &args).map(|_| ())
+}
+
+// 放弃所有本地修改:把 HEAD 恢复到上次提交,并清理未跟踪文件。
+// 这是确认框对应的全量破坏性操作;忽略文件不受影响。
+pub fn discard_all_changes(repo: &str) -> Result<(), String> {
+    let st = status(repo);
+    if st.unborn {
+        if st.staged.is_empty() && st.unstaged.is_empty() && st.untracked.is_empty() {
+            return Ok(());
+        }
+        return run_git(repo, &["clean", "-fd", "--"]).map(|_| ());
+    }
+    if st.staged.is_empty() && st.unstaged.is_empty() && st.untracked.is_empty() {
+        return Ok(());
+    }
+    run_git(repo, &["reset", "--hard", "HEAD"])?;
+    run_git(repo, &["clean", "-fd", "--"]).map(|_| ())
 }
 
 /// 丢弃单个文件的更改:已跟踪 → git restore 还原工作区;未跟踪 → git clean 删除
@@ -491,7 +527,10 @@ pub fn fetch(repo: &str) -> Result<String, String> {
 pub fn diff_for_ai(repo: &str, staged_only: bool) -> Result<String, String> {
     let st = status(repo);
     let mut buf = String::new();
-    if let Ok(s) = run_git(repo, &["diff", "--cached", "--no-color", "--no-ext-diff", "--stat"]) {
+    if let Ok(s) = run_git(
+        repo,
+        &["diff", "--cached", "--no-color", "--no-ext-diff", "--stat"],
+    ) {
         if !s.trim().is_empty() {
             buf.push_str("## 已暂存变更（stat）\n");
             buf.push_str(&s);
@@ -559,6 +598,33 @@ pub fn last_commit_ts(repo: &str) -> Option<i64> {
         .ok()
 }
 
+/// 单个仓库在指定时间点之后的提交数，按作者日期聚合为本地日历日。
+/// 总览只读取当前 HEAD，避免未检出的历史分支重复计入项目活跃度。
+#[derive(Serialize, Clone)]
+pub struct CommitDay {
+    pub date: String,
+    pub count: usize,
+}
+
+pub fn commit_days(repo: &str, since: i64) -> Vec<CommitDay> {
+    let since = format!("--since=@{since}");
+    run_git(
+        repo,
+        &["log", "HEAD", &since, "--date=short", "--format=%ad"],
+    )
+    .map(|out| {
+        let mut counts = BTreeMap::<String, usize>::new();
+        for date in out.lines().map(str::trim).filter(|date| !date.is_empty()) {
+            *counts.entry(date.to_string()).or_default() += 1;
+        }
+        counts
+            .into_iter()
+            .map(|(date, count)| CommitDay { date, count })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
 #[derive(Serialize, Clone)]
 pub struct CommitInfo {
     pub hash: String,
@@ -566,6 +632,8 @@ pub struct CommitInfo {
     pub author: String,
     pub timestamp: i64,
     pub subject: String,
+    /// 提交信息正文(去掉第一行 subject 后的剩余部分),可能为空
+    pub body: String,
 }
 
 /// 历史列表(按时间倒序,HEAD 当前分支)
@@ -575,56 +643,77 @@ pub fn log(repo: &str, n: usize) -> Vec<CommitInfo> {
 
 /// 指定 ref(分支/远程分支)的历史
 pub fn log_ref(repo: &str, r: &str, n: usize) -> Vec<CommitInfo> {
-    run_git(repo, &["log", &format!("-{n}"), r, "--format=%H%x09%h%x09%an%x09%at%x09%s"])
-        .map(|o| {
-            o.lines()
-                .filter_map(|l| {
-                    let mut p = l.splitn(5, '\t');
-                    Some(CommitInfo {
-                        hash: p.next()?.to_string(),
-                        short: p.next()?.to_string(),
-                        author: p.next()?.to_string(),
-                        timestamp: p.next()?.parse().unwrap_or(0),
-                        subject: p.next()?.to_string(),
-                    })
+    run_git(
+        repo,
+        &[
+            "log",
+            &format!("-{n}"),
+            r,
+            "--format=%H%x09%h%x09%an%x09%at%x09%s%x09%b",
+        ],
+    )
+    .map(|o| {
+        o.lines()
+            .filter_map(|l| {
+                let mut p = l.splitn(6, '\t');
+                Some(CommitInfo {
+                    hash: p.next()?.to_string(),
+                    short: p.next()?.to_string(),
+                    author: p.next()?.to_string(),
+                    timestamp: p.next()?.parse().unwrap_or(0),
+                    subject: p.next()?.to_string(),
+                    body: p.next()?.trim().to_string(),
                 })
-                .collect()
-        })
-        .unwrap_or_default()
+            })
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
 /// 当前分支的上游(远程跟踪分支),如 "origin/main";无上游返回 None
 pub fn upstream(repo: &str) -> Option<String> {
-    run_git(repo, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    run_git(
+        repo,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())
 }
 
 /// 第一个远程跟踪分支(如 origin/master),排除符号引用 origin/HEAD;
 /// 用于 upstream 未设置时兜底展示远程历史
 pub fn first_remote_branch(repo: &str) -> Option<String> {
-    run_git(repo, &["for-each-ref", "--format=%(refname:short)", "refs/remotes"])
-        .ok()?
-        .lines()
-        .map(|l| l.trim().to_string())
-        .find(|l| !l.is_empty() && l != "origin/HEAD")
+    run_git(
+        repo,
+        &["for-each-ref", "--format=%(refname:short)", "refs/remotes"],
+    )
+    .ok()?
+    .lines()
+    .map(|l| l.trim().to_string())
+    .find(|l| !l.is_empty() && l != "origin/HEAD")
 }
 
 /// 本地领先远程的提交数(remote..HEAD)
 pub fn ahead_count(repo: &str, remote_ref: &str) -> i64 {
-    run_git(repo, &["rev-list", "--count", &format!("{remote_ref}..HEAD")])
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
+    run_git(
+        repo,
+        &["rev-list", "--count", &format!("{remote_ref}..HEAD")],
+    )
+    .ok()
+    .and_then(|s| s.trim().parse().ok())
+    .unwrap_or(0)
 }
 
 /// 远程领先本地的提交数(HEAD..remote)
 pub fn behind_count(repo: &str, remote_ref: &str) -> i64 {
-    run_git(repo, &["rev-list", "--count", &format!("HEAD..{remote_ref}")])
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
+    run_git(
+        repo,
+        &["rev-list", "--count", &format!("HEAD..{remote_ref}")],
+    )
+    .ok()
+    .and_then(|s| s.trim().parse().ok())
+    .unwrap_or(0)
 }
 
 pub fn head_hash(repo: &str) -> Option<String> {
@@ -641,7 +730,12 @@ pub fn reset_hard(repo: &str, hash: &str) -> Result<String, String> {
 /// 本地分支列表
 pub fn local_branches(repo: &str) -> Vec<String> {
     run_git(repo, &["branch", "--format=%(refname:short)"])
-        .map(|o| o.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .map(|o| {
+            o.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -690,7 +784,11 @@ pub fn finish_merge(repo: &str) -> Result<(bool, String), String> {
         return Ok((false, String::new()));
     }
     let msg = std::fs::read_to_string(git_dir.join("MERGE_MSG")).unwrap_or_default();
-    let msg = if msg.trim().is_empty() { "Merge".into() } else { msg.trim().to_string() };
+    let msg = if msg.trim().is_empty() {
+        "Merge".into()
+    } else {
+        msg.trim().to_string()
+    };
     let out = commit(repo, &msg)?;
     Ok((true, out))
 }
@@ -700,7 +798,8 @@ mod tests {
     use super::*;
 
     fn temp_repo(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("hellogitty-test-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("hellogitty-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         run_git(dir.to_str().unwrap(), &["init", "-q"]).unwrap();
@@ -786,7 +885,42 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        assert!(ts > 0 && ts <= now + 5, "时间戳应落在合理区间: {ts} vs {now}");
+        assert!(
+            ts > 0 && ts <= now + 5,
+            "时间戳应落在合理区间: {ts} vs {now}"
+        );
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn discard_all_restores_head_and_removes_untracked() {
+        let repo = temp_repo("discard-all");
+        let r = repo.to_str().unwrap();
+        std::fs::write(repo.join("tracked.txt"), "base\n").unwrap();
+        stage_all(r).unwrap();
+        commit(r, "base").unwrap();
+
+        // 同时制造已暂存、未暂存和未跟踪改动。
+        std::fs::write(repo.join("tracked.txt"), "staged\n").unwrap();
+        stage_all(r).unwrap();
+        std::fs::write(repo.join("tracked.txt"), "unstaged\n").unwrap();
+        std::fs::write(repo.join("new.txt"), "new\n").unwrap();
+        let before = status(r);
+        assert!(!before.staged.is_empty());
+        assert!(!before.unstaged.is_empty());
+        assert!(!before.untracked.is_empty());
+
+        discard_all_changes(r).unwrap();
+
+        let after = status(r);
+        assert!(after.staged.is_empty());
+        assert!(after.unstaged.is_empty());
+        assert!(after.untracked.is_empty());
+        assert_eq!(
+            std::fs::read_to_string(repo.join("tracked.txt")).unwrap(),
+            "base\n"
+        );
+        assert!(!repo.join("new.txt").exists());
         std::fs::remove_dir_all(repo).ok();
     }
 
@@ -870,7 +1004,8 @@ mod tests {
     #[test]
     fn upstream_and_remote_log() {
         // 建裸仓库作远程
-        let bare = std::env::temp_dir().join(format!("hellogitty-test-bare-{}", std::process::id()));
+        let bare =
+            std::env::temp_dir().join(format!("hellogitty-test-bare-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&bare);
         std::fs::create_dir_all(&bare).unwrap();
         run_git(bare.to_str().unwrap(), &["init", "-q", "--bare"]).unwrap();

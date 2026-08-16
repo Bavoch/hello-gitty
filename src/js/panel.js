@@ -1,7 +1,7 @@
 /* 仓库面板视图:刷新主区(状态+历史)、空态、文件列表(暂存/更改/冲突)、diff 视图、
    忽略规则对话框、「更多」菜单 */
-import { $, invoke, toast, setButtonLoading, STATUS_CHARS, repo, lastShipStatus, setLastShipStatus } from "./state.js";
-import { updateSidebarCurrent, updateProjectHeader, loadRepos, fetchRemote, removeRepo } from "./sidebar.js";
+import { $, invoke, toast, setButtonLoading, STATUS_CHARS, repo, view, repos, lastShipStatus, setLastShipStatus, setNumBadge } from "./state.js";
+import { updateProjectHeader, renderRepoList, removeRepo } from "./sidebar.js";
 import { renderHistory } from "./history.js";
 import { toggleStage, askDiscardFile, resolveOne, stageAll, discardAll, invalidateBranchCache } from "./git-ops.js";
 
@@ -10,19 +10,35 @@ const sectionUserSet = new Set(); // 用户手动切换过的分组:自动收起
 /* ===== 主区刷新 ===== */
 export async function refresh() {
   if (!repo) return;
+  const targetRepo = repo;
   invalidateBranchCache(); // 仓库状态已变(切分支/推送/拉取等),分支缓存作废
   updateProjectHeader(); // 顶部标题栏:当前项目图标 + 名称
   // 一次拉取合并的 status + history(后端复用 status 的 branch 信息,省去重复 git 进程)
-  const data = await invoke("git_refresh", { repo });
+  const data = await invoke("git_refresh", { repo: targetRepo });
+  // 总览/切换项目期间,旧请求返回的数据不能重新显示项目级工具栏和面板
+  if (view !== "repo" || repo !== targetRepo) return;
   const st = data.status, hist = data.history;
+  // 就地同步侧栏摘要:角标(未暂存+未跟踪+冲突)/领先落后数/最近提交时间随面板操作即时更新,
+  // 不必等全量重扫(暂存一批更改后左侧数字立刻变化);字段口径与后端 summarize 一致
+  const sum = repos.find((r) => r.path === targetRepo);
+  if (sum) {
+    sum.branch = st.branch || null;
+    sum.ahead = st.ahead;
+    sum.behind = st.behind;
+    sum.staged = st.staged.length;
+    sum.unstaged = st.unstaged.length + st.untracked.length;
+    sum.conflicts = st.conflicts.length;
+    sum.is_repo = st.is_repo;
+    const head = hist && hist[0];
+    if (head && head.timestamp) sum.last_commit_ts = head.timestamp;
+    renderRepoList();
+  }
   if (!st.is_repo) {
     showEmpty(true);
-    updateSidebarCurrent(st);
     return;
   }
   showPanel(st);
-  renderHistory(hist, st.branch, data.checkpoints);
-  updateSidebarCurrent(st); // 侧栏只就地更新当前项,不做全量扫描
+  renderHistory(hist, st.branch);
 }
 
 // 切换仓库的加载占位:延迟 150ms 显示(毫秒级切换不闪 spinner),一旦显示至少停留 250ms(避免抖一下)
@@ -56,6 +72,7 @@ export async function showEmpty(showInit) {
   leaveOverview();
   // 无项目时隐藏标题栏;当前选中项不是 Git 仓库时仍保留(项目已选定)
   $("project-header").classList.toggle("hidden", !repo);
+  $("toolbar").classList.add("hidden"); // 空态无 Git 操作,隐藏顶部工具栏
   $("panel").classList.add("hidden");
   await hideRefreshing();
   $("empty-state").classList.remove("hidden");
@@ -82,22 +99,27 @@ export async function showEmpty(showInit) {
     const b = $(id);
     if (b) b.classList.remove("primary");
   }
-  if ($("push-count")) $("push-count").className = "btn-count hidden";
+  if ($("push-count")) {
+    setNumBadge($("push-count"), 0);
+    $("push-count").classList.add("hidden");
+  }
   if ($("pull-count")) $("pull-count").classList.add("hidden");
 }
 
 export async function showPanel(st) {
   $("empty-state").classList.add("hidden");
+  $("toolbar").classList.remove("hidden"); // 仓库面板恢复顶部工具栏
   await hideRefreshing();
   $("panel").classList.remove("hidden");
 
   renderList("conflict-list", st.conflicts, "conflict", $("conflict-count"));
-  renderList("staged-list", st.staged, "staged", $("staged-count"));
+  // 暂存计数弱化显示:灰字无胶囊(暂存是中间态,提示强度低于实际更改)
+  renderList("staged-list", st.staged, "staged", $("staged-count"), "dim");
   renderList("unstaged-list", [...st.unstaged, ...st.untracked], "unstaged", $("unstaged-count"));
 
-  // 列表为空时禁用对应整组操作按钮:取消全部暂存←暂存数;取消修改/全部暂存←更改数
+  // 列表为空时禁用对应整组操作按钮:取消全部暂存←暂存数;取消修改←全部本地改动;全部暂存←未暂存改动
   $("btn-unstage-all").disabled = st.staged.length === 0;
-  $("btn-discard-all").disabled = st.unstaged.length + st.untracked.length === 0;
+  $("btn-discard-all").disabled = st.staged.length + st.unstaged.length + st.untracked.length === 0;
   $("btn-stage-all").disabled = st.unstaged.length + st.untracked.length === 0;
 
   $("sec-conflicts").classList.toggle("hidden", st.conflicts.length === 0);
@@ -122,8 +144,8 @@ export async function showPanel(st) {
     pb.classList.toggle("primary", dirty);
   }
   if (lc) {
-    lc.classList.toggle("hidden", !(st.behind > 0));
-    if (st.behind > 0) lc.textContent = st.behind;
+    if (st.behind > 0) { setNumBadge(lc, st.behind, "red"); lc.classList.remove("hidden"); }
+    else lc.classList.add("hidden");
   }
 }
 
@@ -133,14 +155,15 @@ function setSectionOpen(secId, targetId, open) {
   $(targetId).classList.toggle("hidden", !open);
 }
 
-// 提交按钮:有任何本地更改 → 主按钮样式;干净 → 正常次要样式(永不禁用,空操作走 toast)
+// 提交按钮:有已暂存更改 → 主按钮样式;未暂存/干净 → 正常次要样式(永不禁用,空操作走 toast)
 function setCommitButton(st) {
   const btn = $("btn-commit");
   if (!btn || btn.classList.contains("loading")) return; // loading 中不重建,避免打断操作
   const pending = st.staged.length + st.unstaged.length + st.untracked.length;
   btn.disabled = false;
-  btn.title = pending > 0 ? "提交全部本地更改" : "没有可提交的更改";
-  btn.classList.toggle("primary", pending > 0);
+  btn.title = st.staged.length > 0 ? "提交已暂存的更改"
+    : (pending > 0 ? "请先暂存更改" : "没有可提交的更改");
+  btn.classList.toggle("primary", st.staged.length > 0);
 }
 
 // 推送按钮:本地领先 → 主按钮样式;无领先 → 正常次要样式(永不禁用,空操作走 toast)
@@ -153,8 +176,8 @@ function setPushButton(st) {
   btn.title = dirty ? "推送本地领先的提交" : "没有待推送的提交";
   btn.classList.toggle("primary", dirty);
   if (count) {
-    count.classList.toggle("hidden", !dirty);
-    if (dirty) count.textContent = st.ahead;
+    if (dirty) { setNumBadge(count, st.ahead); count.classList.remove("hidden"); }
+    else count.classList.add("hidden");
   }
 }
 
@@ -167,11 +190,11 @@ export function refreshShipButtons() {
 }
 
 /* ===== 文件列表 ===== */
-function renderList(listId, entries, kind, countEl) {
+// mods:数值 >0 时附加的修饰类(如 "dim" 弱化);zero:数值为 0 时的回落形态
+function renderList(listId, entries, kind, countEl, mods = "") {
   const ul = $(listId);
   ul.innerHTML = "";
-  countEl.textContent = entries.length;
-  countEl.classList.toggle("badge", entries.length > 0); // 有改动时用蓝色胶囊标签,为 0 回落简洁灰数字
+  setNumBadge(countEl, entries.length, mods);
   for (const e of entries) {
     const li = document.createElement("li");
     li.className = "file-row" + (kind === "conflict" ? " conflict" : "");
@@ -249,12 +272,10 @@ function stChar(e, kind) {
 
 // 添加到 .gitignore:计算文件名/扩展名/目录候选规则
 function askIgnore(path) {
-  $("dlg-ignore").dataset.path = path;
   const base = path.split("/").pop();
   const dot = base.lastIndexOf(".");
   const ext = dot > 0 ? "*" + base.slice(dot) : null;
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : null;
-  $("ignore-file-name").textContent = "文件： " + path;
   const box = $("ignore-options");
   box.innerHTML = "";
   const opts = [{ label: "此文件", rule: base }];
@@ -265,10 +286,15 @@ function askIgnore(path) {
     lab.className = "ignore-opt";
     const r = document.createElement("input");
     r.type = "checkbox"; r.value = o.rule;
+    r.className = "ig-check";
     if (i === 0) r.checked = true;
+    const name = document.createElement("span");
+    name.className = "ig-name";
+    name.textContent = o.label;
     const code = document.createElement("code");
+    code.className = "ig-rule";
     code.textContent = o.rule;
-    lab.append(r, document.createTextNode(" " + o.label + " "), code);
+    lab.append(r, name, code);
     box.appendChild(lab);
   });
   $("dlg-ignore").classList.remove("hidden");
@@ -287,17 +313,36 @@ async function showDiff(e, kind) {
   }
 }
 
-// diff 渲染(VS Code 风格:行级背景 + gutter + / -)
+// diff 渲染:只展示实际改动内容,滤掉 git diff 的元信息行
+// (diff --git / index / --- / +++ / @@ 均为定位或文件头信息,标题已含文件名,省略以保持简洁)
 function renderDiff(text) {
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return text.split("\n").map((line) => {
+    if (line.startsWith("diff --git ") || line.startsWith("index ")
+      || line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) return "";
     let cls = "d-ctx", sign = " ", body = line;
-    if (line.startsWith("+++") || line.startsWith("---")) cls = "d-meta";
-    else if (line.startsWith("+")) { cls = "d-add"; sign = "+"; body = line.slice(1); }
+    if (line.startsWith("+")) { cls = "d-add"; sign = "+"; body = line.slice(1); }
     else if (line.startsWith("-")) { cls = "d-del"; sign = "-"; body = line.slice(1); }
-    else if (line.startsWith("@@")) cls = "d-hunk";
     return `<div class="d-row ${cls}"><span class="d-gutter">${sign}</span><span class="d-text">${esc(body)}</span></div>`;
   }).join("");
+}
+
+// 规范化 .gitignore 排版:注释段落前空一行(跟在规则行后时)、连续空行合一、
+// 去行尾空白、统一以单个换行结尾。只动空白,不改动注释与规则的内容和顺序。
+function normalizeGitignore(text) {
+  const out = [];
+  for (const raw of text.split("\n")) {
+    const l = raw.replace(/\s+$/, ""); // 去行尾空白
+    const prev = out[out.length - 1];
+    const isComment = l.trimStart().startsWith("#");
+    if (isComment && prev !== undefined && prev.trim() !== "" && !prev.trimStart().startsWith("#")) {
+      out.push(""); // 规则行后直接跟注释:空行分组
+    }
+    if (l.trim() === "" && (prev === undefined || prev.trim() === "")) continue; // 开头/连续空行
+    out.push(l);
+  }
+  const joined = out.join("\n").replace(/\s+$/, "");
+  return joined ? joined + "\n" : "";
 }
 
 /* ===== 事件绑定 ===== */
@@ -311,18 +356,6 @@ export function bindPanelEvents() {
   $("btn-more").addEventListener("click", (e) => {
     e.stopPropagation();
     $("more-menu").classList.toggle("hidden");
-  });
-  $("btn-more-refresh").addEventListener("click", async () => {
-    $("more-menu").classList.add("hidden");
-    // 手动刷新:全量重扫所有仓库状态 + 刷新当前面板
-    setButtonLoading($("btn-more"), true, "刷新中…");
-    try {
-      fetchRemote(); // 手动刷新:同时后台核对远程状态
-      await loadRepos();
-      await refresh();
-    } finally {
-      setButtonLoading($("btn-more"), false);
-    }
   });
   $("btn-more-remove").addEventListener("click", () => {
     $("more-menu").classList.add("hidden");
@@ -339,7 +372,9 @@ export function bindPanelEvents() {
   $("btn-gitignore-save").addEventListener("click", async () => {
     setButtonLoading($("btn-gitignore-save"), true, "保存中…");
     try {
-      await invoke("gitignore_write", { repo, content: $("gitignore-content").value });
+      await invoke("gitignore_write", { repo, content: normalizeGitignore($("gitignore-content").value) });
+      // 同忽略弹窗:新规则命中的已跟踪文件立即移出跟踪,列表即时生效
+      try { await invoke("git_untrack_ignored", { repo }); } catch (_) {}
       $("dlg-gitignore").classList.add("hidden");
       toast("已保存 .gitignore", true);
       await refresh();
@@ -353,17 +388,21 @@ export function bindPanelEvents() {
     setButtonLoading($("btn-ignore-confirm"), true, "添加中…");
     try {
       const content = (await invoke("gitignore_read", { repo })) || "";
-      const existing = new Set(content.split("\n").map((l) => l.trim()).filter(Boolean));
-      const add = rules.filter((r) => !existing.has(r.trim()));
-      const base = content.replace(/\n+$/, "");
-      const merged = base + (base && add.length ? "\n" : "") + (add.length ? add.join("\n") + "\n" : "");
-      await invoke("gitignore_write", { repo, content: merged });
-      // 让被忽略文件立即从列表消失:已跟踪/已暂存文件仅靠 .gitignore 不会从 git status 消失,
-      // 需先从 index 移除;未跟踪文件则由 .gitignore 直接隐藏(--ignore-unmatch 对未跟踪文件不报错)
-      const ipath = $("dlg-ignore").dataset.path;
-      if (ipath) {
-        try { await invoke("git_untrack_file", { repo, path: ipath }); } catch (_) {}
+      // 去重比较用归一化形式:目录规则的尾斜杠不参与(dist 与 dist/ 对 git 等价,避免重复追加)
+      const norm = (s) => s.trim().replace(/\/+$/, "");
+      const existing = new Set(content.split("\n").map(norm).filter(Boolean));
+      const add = rules.filter((r) => !existing.has(norm(r)));
+      if (add.length) {
+        const base = normalizeGitignore(content); // 顺带整理既有排版(段落空行统一)
+        // 与已有内容空行分隔,避免粘进别人的注释/分组;
+        // 尾部已是空行隔开的独立非注释规则块(上次弹窗追加的)则直接续接,不产生碎块
+        const tailIsRuleBlock = /\n\s*\n(?!#)[^\n]*$/.test("\n" + base);
+        const sep = base ? (tailIsRuleBlock ? "\n" : "\n\n") : "";
+        await invoke("gitignore_write", { repo, content: base + sep + add.join("\n") + "\n" });
       }
+      // 让被忽略文件立即从列表消失:.gitignore 对已跟踪/已暂存文件不生效,
+      // 需把命中规则的所有文件(含同目录/同扩展名的其他文件)移出 git 跟踪
+      try { await invoke("git_untrack_ignored", { repo }); } catch (_) {}
       $("dlg-ignore").classList.add("hidden");
       toast(add.length ? "已添加到 .gitignore： " + add.join("、") : "所选规则已存在，无需添加", add.length > 0);
       await refresh();

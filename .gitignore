@@ -9,5 +9,8 @@ dist/
 .DS_Store
 .zcode/plans/
 .workbuddy/memory/
+
 # 外部工具元数据
 .reasonix/
+*.log
+.playwright-cli/

@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hello Gitty</title>
-  <link rel="stylesheet" href="styles.css?v=20260815110000" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="stylesheet" href="styles.css?v=20260815134800" />
   <script>
     // 仅开发模式(http://localhost:1421)生效:检测源文件变更后自动刷新窗口
     if (location.protocol === "http:") {
@@ -43,13 +44,12 @@
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z"/></svg>
         </button>
       </div>
-      <button id="btn-overview" class="repo-item overview-item" title="全部项目状态总览">
+      <button id="btn-overview" class="repo-item overview-item">
         <span class="repo-icon-wrap overview-icon">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none"><path d="M3 10.5 12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15v-6H9v6H4.5A1.5 1.5 0 0 1 3 20Z"/></svg>
         </span>
         <div class="repo-info">
           <span class="repo-name">总览</span>
-          <div class="repo-meta" id="overview-meta"></div>
         </div>
       </button>
       <ul id="repo-list"></ul>
@@ -85,39 +85,28 @@
       </div>
       <section id="toolbar">
         <div class="ship-wrap">
-          <button id="btn-commit" class="tool-btn" title="提交" disabled>
+          <button id="btn-commit" class="tool-btn" disabled>
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
             提交
           </button>
-          <button id="btn-push" class="tool-btn" title="推送" disabled>
+          <button id="btn-push" class="tool-btn" disabled>
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
             推送
-            <span id="push-count" class="btn-count push hidden" title="本地领先的提交数"></span>
+            <span id="push-count" class="hidden" title="本地领先的提交数"></span>
           </button>
-          <!-- 提交信息流式就地弹窗 -->
+          <!-- 提交信息结果面板:AI 生成完成后弹出,含可编辑输入 + 取消/提交 -->
           <div id="commit-pop" class="commit-pop hidden">
-            <div class="commit-pop-head">
-              <span id="commit-pop-title">AI 正在生成提交信息…</span>
-              <span class="spinner commit-pop-spin" id="commit-pop-spin"></span>
-              <button class="commit-pop-x" id="commit-pop-close" title="取消">×</button>
-            </div>
-            <textarea id="commit-stream-text" class="commit-stream-text" rows="6" disabled placeholder="提交信息…"></textarea>
-            <div class="commit-pop-actions hidden" id="commit-pop-actions">
-              <button class="tool-btn" id="commit-pop-regen">重新生成</button>
-              <span class="spacer"></span>
-              <button class="tool-btn" id="commit-pop-cancel">取消</button>
-              <button class="tool-btn primary" id="commit-pop-ok">提交</button>
+            <textarea id="commit-stream-text" class="commit-stream-text" rows="6" placeholder="AI 正在生成…"></textarea>
+            <div class="commit-pop-actions">
+              <button id="btn-commit-cancel" class="tool-btn">取消</button>
+              <button id="btn-commit-confirm" class="tool-btn primary">提交</button>
             </div>
           </div>
         </div>
         <button id="btn-pull" class="tool-btn">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
           拉取
-          <span id="pull-count" class="btn-count pull hidden" title="远程领先的提交数"></span>
-        </button>
-        <button id="btn-checkpoint" class="tool-btn" title="创建存档点（保存当前工作区完整状态，AI 改坏了一键读档）">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-          存档点
+          <span id="pull-count" class="hidden" title="远程领先的提交数"></span>
         </button>
         <span class="busy-ind hidden" id="sb-busy">
           <span class="spinner"></span><span id="sb-busy-text">处理中…</span>
@@ -128,10 +117,6 @@
             更多
           </button>
           <div id="more-menu" class="more-menu hidden">
-            <button id="btn-more-refresh">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-              刷新
-            </button>
             <button id="btn-more-gitignore">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
               忽略规则
@@ -160,10 +145,43 @@
           <span class="spinner"></span>
         </div>
 
-        <!-- 多仓库总览:全部项目状态一览,点击行进入项目 -->
+        <!-- 多仓库总览:KPI 统计 + 项目运行卡片,卡片点击进入项目 -->
         <div id="dashboard" class="hidden">
-          <div class="dash-stats" id="dash-stats"></div>
-          <ul class="dash-list" id="dash-list"></ul>
+          <div class="dash-head">
+            <span class="dash-title">项目总览</span>
+            <button id="btn-add-projects" class="tool-btn">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 10v6"/><path d="M9 13h6"/></svg>
+              添加项目…
+            </button>
+          </div>
+          <div class="dash-cards" id="dash-cards"></div>
+          <div class="dash-stats-row">
+            <section class="dash-activity" aria-labelledby="activity-title">
+              <div class="dash-activity-head">
+                <span id="activity-title">提交活跃度</span>
+                <span id="activity-total" class="dash-activity-total"></span>
+              </div>
+              <div id="activity-heatmap"></div>
+              <div id="heat-tooltip" class="heat-tooltip hidden"></div>
+            </section>
+            <section class="dash-donut" aria-labelledby="donut-title">
+              <div class="dash-donut-head">
+                <span id="donut-title">项目类型</span>
+              </div>
+              <div id="category-donut"></div>
+            </section>
+          </div>
+          <!-- 项目卡片:筛选栏(分类 Tab + 排序 + 搜索框)+ 单个卡片网格 -->
+          <div class="dash-tabs" id="dash-tabs">
+            <div class="dash-cat-tabs" id="dash-cat-tabs"></div>
+            <select id="dash-sort" class="dash-sort">
+              <option value="modified">最近修改</option>
+              <option value="run">最近运行</option>
+              <option value="name">按名称</option>
+            </select>
+            <input type="text" id="dash-search" class="dash-search" placeholder="搜索项目…" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="run-cards" id="run-cards"></div>
         </div>
 
         <div id="panel" class="hidden">
@@ -172,7 +190,7 @@
               <span class="caret"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
               <span class="ch-badge ch-c">C</span>
               <span id="conflict-title">冲突</span>
-              <span class="count" id="conflict-count">0</span>
+              <span class="num-badge plain" id="conflict-count">0</span>
             </button>
             <div class="section-actions">
               <button id="btn-ai-resolve" class="mini-btn ai">用 AI 解决全部</button>
@@ -185,7 +203,7 @@
               <button class="section-head" data-target="staged-list">
                 <span class="caret"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
                 <span id="staged-title">暂存</span>
-                <span class="count" id="staged-count">0</span>
+                <span class="num-badge plain" id="staged-count">0</span>
               </button>
               <button class="icon-btn sec-act" id="btn-unstage-all" title="取消全部暂存"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button>
             </div>
@@ -197,7 +215,7 @@
               <button class="section-head" data-target="unstaged-list">
                 <span class="caret"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
                 <span id="unstaged-title">更改</span>
-                <span class="count" id="unstaged-count">0</span>
+                <span class="num-badge plain" id="unstaged-count">0</span>
               </button>
               <button class="icon-btn sec-act" id="btn-discard-all" title="取消所有修改"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></button>
               <button class="icon-btn sec-act" id="btn-stage-all" title="全部暂存"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
@@ -210,7 +228,7 @@
               <button class="section-head" data-target="history-container">
                 <span class="caret"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
                 <span>版本</span>
-                <span class="count" id="history-count">0</span>
+                <span class="num-badge plain" id="history-count">0</span>
               </button>
             </div>
             <div id="history-container"></div>
@@ -218,22 +236,13 @@
         </div>
       </div>
 
-      <!-- 运行服务器面板:标题栏常驻底部,日志区可展开/收起 -->
+      <!-- 运行服务器面板:命令从左往右平铺,日志区可展开/收起 -->
       <div id="run-panel" class="closed">
         <div class="run-head">
-          <input id="run-cmd" type="text" class="run-cmd-input" list="run-cmd-options" placeholder="运行命令，如 npm run dev（留空按项目自动识别）" title="项目的运行命令，回车保存；下拉可选识别出的全部候选" />
-          <datalist id="run-cmd-options"></datalist>
-          <div class="run-btn-wrap">
-            <button id="btn-run" title="运行项目开发服务器（实时日志，可停止）">
-              <svg id="btn-run-icon-play" viewBox="0 0 24 24" width="13" height="13" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
-              <svg id="btn-run-icon-stop" class="hidden" viewBox="0 0 24 24" width="13" height="13" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
-              <span id="run-label">运行</span>
-            </button>
-            <button id="btn-run-caret" class="run-caret" title="选择运行命令">
-              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-            <div id="run-menu" class="run-menu hidden"></div>
-          </div>
+          <div id="run-cmds" class="run-cmds"></div>
+          <span class="run-spacer"></span>
+          <!-- 运行中显示端口(与总览卡片一致,点击在浏览器打开) -->
+          <span id="run-url" class="run-url hidden"></span>
           <button class="icon-btn run-collapse" id="btn-run-collapse" title="展开日志面板">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>
           </button>
@@ -270,24 +279,11 @@
     </div>
   </div>
 
-  <!-- 读档到存档点确认 -->
-  <div class="overlay hidden" id="dlg-restore">
-    <div class="dialog">
-      <h3>读档到存档点</h3>
-      <p class="dlg-hint warn">将回到此存档点的完整状态（HEAD 与工作区），丢弃之后的所有提交与未保存改动，此操作不可恢复。</p>
-      <div class="dlg-actions">
-        <button class="tool-btn" id="btn-restore-cancel">取消</button>
-        <span class="spacer"></span>
-        <button class="tool-btn danger" id="btn-restore-confirm">确认读档</button>
-      </div>
-    </div>
-  </div>
-
   <!-- 取消所有修改确认(复用:也用于单文件丢弃) -->
   <div class="overlay hidden" id="dlg-discard-all">
     <div class="dialog">
       <h3 id="discard-title">取消所有修改</h3>
-      <p class="dlg-hint warn" id="discard-hint">将丢弃所有未暂存与已暂存的改动，工作区恢复到上次提交的状态，此操作不可恢复。</p>
+      <p class="dlg-hint warn" id="discard-hint">将丢弃所有已暂存和未暂存的改动，并删除未跟踪文件，恢复到上次提交的状态。此操作不可恢复。</p>
       <div class="dlg-actions">
         <button class="tool-btn" id="btn-discard-all-cancel">取消</button>
         <span class="spacer"></span>
@@ -331,7 +327,7 @@
       <div class="settings-main">
         <div class="settings-nav">
           <button class="settings-nav-item active" data-tab="ai"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.4a3 3 0 0 0 1.8 1.8L21 12l-5.4 1.8a3 3 0 0 0-1.8 1.8L12 21l-1.8-5.4a3 3 0 0 0-1.8-1.8L3 12l5.4-1.8a3 3 0 0 0 1.8-1.8z"/></svg>AI 模型配置</button>
-          <button class="settings-nav-item" data-tab="commit"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M3 12h5"/><path d="M16 12h5"/></svg>提交推送配置</button>
+          <button class="settings-nav-item" data-tab="commit"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>提交推送配置</button>
         </div>
         <div class="settings-body">
           <div class="settings-tab" data-tab="ai">
@@ -354,13 +350,6 @@
               <select id="set-commit-mode">
                 <option value="auto">直接提交（AI 生成后自动提交）</option>
                 <option value="confirm">确认后提交（生成后展示，可修改）</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>提交信息语言</span>
-              <select id="set-lang">
-                <option value="中文">中文</option>
-                <option value="英文">英文</option>
               </select>
             </label>
             <label class="field">
@@ -395,7 +384,6 @@
   <div class="overlay hidden" id="dlg-ignore">
     <div class="dialog">
       <h3>添加到 .gitignore</h3>
-      <p class="dlg-hint" id="ignore-file-name">文件：</p>
       <div class="ignore-options" id="ignore-options"></div>
       <div class="dlg-actions">
         <span class="spacer"></span>

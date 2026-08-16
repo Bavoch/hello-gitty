@@ -9,7 +9,7 @@ export const DEFAULT_AI = { base_url: "https://api.deepseek.com", api_key: "", m
 export const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" };
 
 /* ===== 共享可变状态(setter 供跨模块重绑) ===== */
-export let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [], run_commands: {} };
+export let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [], run_commands: {}, run_urls: {}, run_history: [] };
 export let repos = []; // 侧栏仓库摘要列表
 export let repo = null; // 当前仓库路径
 export let view = "repo"; // 主区视图:repo(单项目面板) | overview(多仓库总览)
@@ -21,6 +21,30 @@ export function setRepos(v) { repos = v; }
 export function setRepo(v) { repo = v; }
 export function setView(v) { view = v; }
 export function setLastShipStatus(v) { lastShipStatus = v; }
+// 从运行地址文本解析端口(http://h:3000/x、localhost:3000、:3000 均可);无端口返回 null
+export function urlPort(u) {
+  if (!u) return null;
+  try { const p = new URL(u.includes("://") ? u : "http://" + u).port; if (p) return +p; } catch (_) { /* 走正则兜底 */ }
+  const m = /:(\d{2,5})(?:[/?#]|$)/.exec(u);
+  return m ? +m[1] : null;
+}
+
+// 运行地址显示形式:localhost 地址只显示端口(前缀都一样),其余(自定义域名等)显示完整 URL
+export function urlDisplay(u) {
+  const m = /^https?:\/\/localhost:(\d+)\/?$/.exec(u || "");
+  return m ? m[1] : u;
+}
+
+/* ===== 数字角标全局组件(与样式表 .num-badge 配套) =====
+   n > 0:主题色胶囊;mods 附加类(配色/定位修饰,如 "red"、"run-card-badge")。
+   n <= 0:回落 zero 形态,目前仅 "plain" 普通灰数字(面板分组标题;图标角标类由调用方直接不渲染)。
+   注意整体重写 className,hidden 等状态类请在调用后用 classList 补回 */
+export function setNumBadge(el, n, mods = "", zero = "plain") {
+  const extra = n > 0 ? mods : [mods, zero].filter(Boolean).join(" ");
+  el.className = ("num-badge" + (extra ? " " + extra : "")).trim();
+  el.textContent = n;
+  return el;
+}
 export function isBusy() { return busy; }
 
 /* ===== 通用 UI 工具 ===== */
@@ -100,23 +124,17 @@ export function relTimeShort(ts) {
 }
 
 /* ===== 无图标项目的字母头像 ===== */
-// 10 种高区分度配色(与主题暗色系协调),按路径哈希稳定分配
+// 10 种高区分度配色(与主题暗色系协调),按路径哈希稳定分配。
+// 实色填充背景 + 深色字母(#1e1e1e 与主题底色一致,对比度高,
+// 同数字角标「主题色底 + 深字」的做法)
 const AVATAR_COLORS = [
-  { bg: "#f4877133", fg: "#f48771" },
-  { bg: "#89d18533", fg: "#89d185" },
-  { bg: "#dcdcaa33", fg: "#dcdcaa" },
-  { bg: "#75beff33", fg: "#75beff" },
-  { bg: "#c792ea33", fg: "#c792ea" },
-  { bg: "#f78c6c33", fg: "#f78c6c" },
-  { bg: "#80cbc433", fg: "#80cbc4" },
-  { bg: "#82aaff33", fg: "#82aaff" },
-  { bg: "#ffcb6b33", fg: "#ffcb6b" },
-  { bg: "#f0717833", fg: "#f07178" },
+  "#f48771", "#89d185", "#dcdcaa", "#75beff", "#c792ea",
+  "#f78c6c", "#80cbc4", "#82aaff", "#ffcb6b", "#f07178",
 ];
 
 // 按路径哈希取配色:不同项目大概率不同色,同一项目每次渲染颜色稳定
 export function repoAvatarColor(path) {
   let h = 0;
   for (let i = 0; i < path.length; i++) h = (h * 31 + path.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  return { bg: AVATAR_COLORS[h % AVATAR_COLORS.length], fg: "#1e1e1e" };
 }

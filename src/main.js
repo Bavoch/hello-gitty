@@ -1,7 +1,7 @@
 /* Hello Gitty 前端入口:应用初始化、设置对话框、全局弹层收起。
    各功能域拆分在 js/ 下(ES modules,无打包器):state(共享状态/工具)、
    sidebar(侧栏/项目管理)、panel(仓库面板)、git-ops(Git 操作/AI)、
-   history(历史/存档点)、run-panel(运行服务器)、dashboard(多仓库总览)。 */
+   history(历史)、run-panel(运行服务器)、dashboard(多仓库总览)。 */
 import { $, invoke, toast, DEFAULT_AI, settings, setSettings, setRepo, repo } from "./js/state.js";
 import { loadRepos, fetchRemote, setupDragDrop, bindSidebarEvents, closeCtxMenu } from "./js/sidebar.js";
 import { refresh, showEmpty, bindPanelEvents } from "./js/panel.js";
@@ -67,7 +67,6 @@ function openSettings() {
   $("set-base-url").value = settings.ai.base_url || DEFAULT_AI.base_url;
   $("set-api-key").value = settings.ai.api_key || "";
   $("set-model").value = settings.ai.model || DEFAULT_AI.model;
-  $("set-lang").value = settings.ai.lang || "中文";
   $("set-commit-mode").value = settings.ai.commit_mode || "auto";
   $("set-custom-prompt").value = settings.ai.custom_prompt || "";
 
@@ -81,7 +80,7 @@ async function saveSettings() {
     base_url: $("set-base-url").value.trim() || DEFAULT_AI.base_url,
     api_key: $("set-api-key").value.trim(),
     model: $("set-model").value.trim() || DEFAULT_AI.model,
-    lang: $("set-lang").value,
+    lang: "中文", // 语言配置已从 UI 移除,固定中文(后端反序列化需要该字段)
     commit_mode: $("set-commit-mode").value,
     custom_prompt: $("set-custom-prompt").value,
   };
@@ -114,9 +113,15 @@ function bindGlobalDismiss() {
   document.addEventListener("click", () => {
     $("more-menu").classList.add("hidden");
     $("branch-menu").classList.add("hidden");
-    $("run-menu").classList.add("hidden");
     closeCtxMenu();
   });
+  // 总览卡片命令下拉框:点击页面任意空白处立即失焦,取消激活态
+  // (WKWebView 下原生 select 点击外部不会自动失焦;捕获阶段监听,不受各控件 stopPropagation 影响)
+  document.addEventListener("click", (e) => {
+    if (e.target instanceof Element && e.target.closest(".run-cmd-select")) return; // 点的是下拉框本身,保持展开
+    const el = document.activeElement;
+    if (el?.classList?.contains("run-cmd-select")) el.blur();
+  }, true);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { $("more-menu").classList.add("hidden"); closeCtxMenu(); }
   });

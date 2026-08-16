@@ -236,14 +236,18 @@ pub async fn generate_commit_message_stream(
 
     // SSE 流式解析:按字节块读入行缓冲,提取 `data: {...}` 中的 choices[0].delta.content
     let mut stream = resp.bytes_stream();
-    let mut buf = String::new();
+    // 按字节缓冲:网络分块边界落在任意字节上,多字节字符(如中文)可能被劈在
+    // 两个 chunk 里,对整块做 from_utf8 会误报"非法 UTF-8";只对完整行解码
+    // (\n 的字节值不会出现在 UTF-8 多字节序列中,按字节切行是安全的)
+    let mut buf: Vec<u8> = Vec::new();
     let mut full = String::new();
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| format!("读取 AI 流式响应失败： {e}"))?;
-        buf.push_str(std::str::from_utf8(bytes.as_ref()).map_err(|_| "AI 响应含非法 UTF-8".to_string())?);
+        buf.extend_from_slice(&bytes);
         // 处理缓冲里所有完整行
-        while let Some(nl) = buf.find('\n') {
-            let line: String = buf.drain(..=nl).collect();
+        while let Some(nl) = buf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = buf.drain(..=nl).collect();
+            let line = String::from_utf8_lossy(&line);
             let line = line.trim();
             if line.is_empty() || !line.starts_with("data:") {
                 continue;

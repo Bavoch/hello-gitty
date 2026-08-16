@@ -23,7 +23,7 @@ let discardTarget = null; // 丢弃确认:null=丢弃全部更改;路径=丢弃�
 export function discardAll() {
   discardTarget = null;
   $("discard-title").textContent = "取消所有修改";
-  $("discard-hint").textContent = "将丢弃所有未暂存与已暂存的改动，工作区恢复到上次提交的状态，此操作不可恢复。";
+  $("discard-hint").textContent = "将丢弃所有已暂存和未暂存的改动，并删除未跟踪文件，恢复到上次提交的状态。此操作不可恢复。";
   $("btn-discard-all-confirm").textContent = "确认取消所有修改";
   $("dlg-discard-all").classList.remove("hidden");
 }
@@ -75,82 +75,71 @@ async function onCommit() {
   if (!repo) { toast("请先打开项目", false); return; }
   // 弹窗已开或流式生成进行中时不重复触发
   if (popState !== "idle" || streamBusy) return;
-  // 立即打开弹窗 + 禁用提交按钮,给用户即时反馈(不等 git status/暂存的网络往返)
-  openCommitPop();
   try {
     const st = await invoke("git_status", { repo });
     setLastShipStatus(st); // 让 closeCommitPop 恢复按钮时基于最新状态
-    const total = st.staged.length + st.unstaged.length + st.untracked.length;
-    if (total === 0) { toast("没有可提交的更改", false); closeCommitPop(); return; }
-    // 智能提交:有未暂存/未跟踪时先全部暂存,一次性提交完本地所有改动(对标 VS Code)
-    if (st.staged.length < total) await invoke("git_stage_all", { repo });
+    // 只提交暂存区:暂存区为空时说明原因(有未暂存改动→引导暂存;完全干净→无可提交)
+    if (st.staged.length === 0) {
+      toast(st.unstaged.length + st.untracked.length > 0
+        ? "没有已暂存的更改，请先暂存"
+        : "没有可提交的更改", false);
+      return;
+    }
     await streamCommitMessage();
   } catch (e) {
     toast(String(e), false);
     // AI 生成失败时 streamCommitMessage 会把弹窗切到可编辑手填态(popState=ready),保留;
-    // 这里只关闭 status/暂存阶段失败留下的空弹窗
+    // 这里只关闭 status 阶段失败留下的空弹窗
     if (popState === "streaming") closeCommitPop();
   }
 }
 
-// 打开弹窗:进入生成中态
-function openCommitPop() {
+// 开始生成:仅提交按钮转加载态,不弹窗(结果面板等生成完成后才出现)
+function startCommitStreaming() {
   popState = "streaming";
   streamCancelled = false;
+  setButtonLoading($("btn-commit"), true, "AI 生成评论中…");
+}
+
+// 生成完成:弹出结果面板,输入框可编辑,供用户确认/修改后提交或取消
+function showCommitResult(msg, ph) {
+  popState = "ready";
   const ta = $("commit-stream-text");
-  ta.value = "";
-  ta.readOnly = true; // 生成中只读(用 readOnly 而非 disabled,避免文本被强制置灰、看不清流式输出)
-  $("commit-pop-title").textContent = "AI 正在生成提交信息…";
-  $("commit-pop-spin").classList.remove("hidden");
-  $("commit-pop-actions").classList.add("hidden");
+  ta.value = msg;
+  ta.readOnly = false;
+  ta.placeholder = ph || "AI 已生成，可修改后提交";
   $("commit-pop").classList.remove("hidden");
-  // 提交中禁用工具栏按钮,避免重复触发;弹窗关闭时由 closeCommitPop 恢复
+  // 提交按钮退出加载态;面板打开期间保持禁用防重复触发
   const cb = $("btn-commit");
-  if (cb) cb.disabled = true;
+  if (cb) { setButtonLoading(cb, false); cb.disabled = true; }
+  ta.focus();
 }
 
 function closeCommitPop() {
   popState = "idle";
   $("commit-pop").classList.add("hidden");
-  refreshShipButtons(); // 恢复提交按钮(openCommitPop 时禁用过)
+  const cb = $("btn-commit");
+  if (cb) { setButtonLoading(cb, false); cb.disabled = false; } // 退出加载态并解锁
+  refreshShipButtons(); // 按当前仓库状态重建按钮样式/提示
 }
 
-// 弹窗进入可编辑确认态
-function readyCommitPopForEdit(msg) {
-  const ta = $("commit-stream-text");
-  ta.value = msg;
-  ta.readOnly = false; // 生成完成,转为可编辑
-  ta.focus();
-  $("commit-pop-actions").classList.remove("hidden");
-  popState = "ready";
-}
-
-// 流式生成:边生成边回填;完成后 auto 模式直接提交,confirm 模式进入可编辑态
+// 流式生成:生成期间按钮加载态,完成后弹出结果面板;失败也弹出可手填面板
 async function streamCommitMessage() {
-  openCommitPop();
+  startCommitStreaming();
   streamBusy = true;
   let msg = "";
   try {
     msg = await invoke("ai_commit_message_stream", { settings: settings.ai, repo });
   } catch (e) {
     if (streamCancelled) return; // 已软取消:静默
-    $("commit-pop-spin").classList.add("hidden");
-    $("commit-pop-title").textContent = "AI 生成失败，可手动填写：";
-    readyCommitPopForEdit("");
+    showCommitResult("", "AI 生成失败，可手动填写后提交");
     throw e; // 让调用方 toast 具体错误
   } finally {
     streamBusy = false;
   }
   if (streamCancelled) return;
-  // 直接提交模式:生成完即提交
-  if (settings.ai.commit_mode === "auto") {
-    await commitWithMessage(msg);
-    return;
-  }
-  // 确认模式:可编辑 + 操作行
-  $("commit-pop-spin").classList.add("hidden");
-  $("commit-pop-title").textContent = "AI 已生成，可修改后提交";
-  readyCommitPopForEdit(msg);
+  // 生成完成:统一弹出结果面板确认(提交/取消由面板按钮决定)
+  showCommitResult(msg);
 }
 
 // 取消/关闭:流式中软取消(后端继续、前端忽略),否则直接关
@@ -391,11 +380,17 @@ export function bindGitEvents() {
   $("btn-commit").addEventListener("click", () => onCommit());
   $("btn-push").addEventListener("click", async () => { await doPush(); await refresh(); });
   $("btn-pull").addEventListener("click", doPull);
-  // 提交流式弹窗按钮
-  $("commit-pop-close").addEventListener("click", cancelCommitPop);
-  $("commit-pop-cancel").addEventListener("click", cancelCommitPop);
-  $("commit-pop-regen").addEventListener("click", () => streamCommitMessage());
-  $("commit-pop-ok").addEventListener("click", () => commitWithMessage($("commit-stream-text").value));
+  // 提交结果面板:取消 = 关闭面板;提交 = 用当前内容提交;Esc 取消;回车提交(Shift+Enter 换行)
+  $("btn-commit-cancel").addEventListener("click", cancelCommitPop);
+  $("btn-commit-confirm").addEventListener("click", () => commitWithMessage($("commit-stream-text").value));
+  $("commit-stream-text").addEventListener("keydown", (e) => {
+    if (popState === "idle") return;
+    if (e.key === "Escape") { e.preventDefault(); cancelCommitPop(); }
+    else if (e.key === "Enter" && !e.shiftKey && popState === "ready") {
+      e.preventDefault();
+      commitWithMessage($("commit-stream-text").value);
+    }
+  });
   $("btn-branch").addEventListener("click", (e) => {
     e.stopPropagation();
     const menu = $("branch-menu");
