@@ -73,9 +73,13 @@ jobs:
         run: npx tauri build --bundles nsis
 
       - name: Upload installer to release
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/release/bundle/nsis/*-setup.exe --clobber
+          TAG: ${{ github.ref_name }}
+        run: |
+          $setup = Resolve-Path "src-tauri/target/release/bundle/nsis/*-setup.exe"
+          gh release upload "$env:TAG" "$setup" --clobber
 
   publish-release:
     needs: [build-macos, build-windows]

@@ -868,6 +868,12 @@ mod tests {
         )
         .unwrap();
         run_git(dir.to_str().unwrap(), &["config", "user.name", "test"]).unwrap();
+        // Windows 上 git 默认 autocrlf=true 会在检出时改写换行符,统一关闭保证内容断言跨平台一致
+        run_git(
+            dir.to_str().unwrap(),
+            &["config", "core.autocrlf", "false"],
+        )
+        .unwrap();
         dir
     }
 
