@@ -3,6 +3,34 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::Manager;
 
+#[cfg(unix)]
+fn replace_file(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::rename(from, to)
+}
+
+#[cfg(windows)]
+fn replace_file(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let from_wide: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to_wide: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    let ok = unsafe {
+        MoveFileExW(
+            from_wide.as_ptr(),
+            to_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if ok == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Settings {
     #[serde(default)]
@@ -21,6 +49,9 @@ pub struct Settings {
     /// 最近使用的运行命令历史(按使用顺序,新→旧),供下拉快捷选择
     #[serde(default)]
     pub run_history: Vec<String>,
+    /// 右侧 diff 面板宽度(px),拖拽调整后持久化
+    #[serde(default)]
+    pub diff_width: Option<f64>,
 }
 
 pub struct SettingsStore {
@@ -52,6 +83,30 @@ impl SettingsStore {
         let json = serde_json::to_string_pretty(s).map_err(|e| e.to_string())?;
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &self.path).map_err(|e| e.to_string())
+        replace_file(&tmp, &self.path).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_file;
+
+    #[test]
+    fn replace_file_creates_and_overwrites_destination() {
+        let dir = std::env::temp_dir().join(format!("hello-gitty-config-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let from = dir.join("settings.json.tmp");
+        let to = dir.join("settings.json");
+
+        std::fs::write(&from, "first").unwrap();
+        replace_file(&from, &to).unwrap();
+        assert_eq!(std::fs::read_to_string(&to).unwrap(), "first");
+
+        std::fs::write(&from, "second").unwrap();
+        replace_file(&from, &to).unwrap();
+        assert_eq!(std::fs::read_to_string(&to).unwrap(), "second");
+        assert!(!from.exists());
+        std::fs::remove_dir_all(dir).ok();
     }
 }

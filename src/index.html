@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hello Gitty</title>
   <link rel="icon" type="image/png" href="favicon.png" />
-  <link rel="stylesheet" href="styles.css?v=20260815134800" />
+  <link rel="stylesheet" href="styles.css?v=20260816222000" />
   <script>
     // 仅开发模式(http://localhost:1421)生效:检测源文件变更后自动刷新窗口
     if (location.protocol === "http:") {
@@ -49,7 +49,7 @@
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none"><path d="M3 10.5 12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15v-6H9v6H4.5A1.5 1.5 0 0 1 3 20Z"/></svg>
         </span>
         <div class="repo-info">
-          <span class="repo-name">总览</span>
+          <span class="repo-name">首页</span>
         </div>
       </button>
       <ul id="repo-list"></ul>
@@ -117,21 +117,18 @@
             更多
           </button>
           <div id="more-menu" class="more-menu hidden">
-            <button id="btn-more-gitignore">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
-              忽略规则
-            </button>
-            <button id="btn-more-remove" class="danger-item">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
-              关闭项目
-            </button>
+            <button id="btn-more-open-dir">打开本地目录</button>
+            <button id="btn-more-gitignore">忽略规则</button>
+            <button id="btn-more-remove" class="danger-item">关闭项目</button>
           </div>
         </div>
       </section>
 
+      <!-- 主区行:左侧仓库面板 + 右侧 diff 面板(点击文件在右侧展示差异,不遮挡操作区) -->
+      <div id="main-row">
       <div id="main">
         <div id="empty-state" class="hidden">
-          <svg viewBox="0 0 24 24" width="64" height="64"><path fill="#4a4a55" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Zm10 0h-6c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Z"/></svg>
+          <svg class="empty-folder-icon" viewBox="0 0 24 24" width="64" height="64" fill="currentColor" aria-hidden="true"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2Z"/></svg>
           <h2 id="empty-title">打开一个项目</h2>
           <p id="empty-desc">选择本地文件夹，或从远程仓库克隆</p>
           <div class="empty-actions">
@@ -148,27 +145,45 @@
         <!-- 多仓库总览:KPI 统计 + 项目运行卡片,卡片点击进入项目 -->
         <div id="dashboard" class="hidden">
           <div class="dash-head">
-            <span class="dash-title">项目总览</span>
-            <button id="btn-add-projects" class="tool-btn">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 10v6"/><path d="M9 13h6"/></svg>
-              添加项目…
-            </button>
+            <span class="dash-title">
+              <img class="dash-title-icon" src="favicon.png" alt="" draggable="false" />
+              Hello Gitty
+            </span>
+            <div class="dash-head-actions">
+              <button id="btn-add-projects" class="tool-btn">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                添加项目
+              </button>
+              <div class="more-wrap">
+                <button id="btn-dash-more" class="icon-btn" title="更多操作">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>
+                </button>
+                <div id="dash-more-menu" class="more-menu hidden">
+                  <button id="btn-dash-close-all">关闭所有项目</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="dash-cards" id="dash-cards"></div>
+          <!-- KPI 行:项目数量(含类型堆叠图)占 50%,运行中/待推送各占 25% -->
+          <div class="dash-kpi-row">
+            <div class="dash-cards" id="dash-cards"></div>
+          </div>
+          <!-- 悬浮提示(热力图/柱状图/堆叠图共用),置顶便于随鼠标全屏定位 -->
+          <div id="heat-tooltip" class="heat-tooltip hidden"></div>
           <div class="dash-stats-row">
             <section class="dash-activity" aria-labelledby="activity-title">
               <div class="dash-activity-head">
-                <span id="activity-title">提交活跃度</span>
+                <span id="activity-title">近一年活动</span>
                 <span id="activity-total" class="dash-activity-total"></span>
               </div>
               <div id="activity-heatmap"></div>
-              <div id="heat-tooltip" class="heat-tooltip hidden"></div>
             </section>
-            <section class="dash-donut" aria-labelledby="donut-title">
-              <div class="dash-donut-head">
-                <span id="donut-title">项目类型</span>
+            <section class="dash-week" aria-labelledby="week-title">
+              <div class="dash-week-head">
+                <span id="week-title">近7日活动</span>
+                <span id="week-total" class="dash-week-total"></span>
               </div>
-              <div id="category-donut"></div>
+              <div id="week-bars"></div>
             </section>
           </div>
           <!-- 项目卡片:筛选栏(分类 Tab + 排序 + 搜索框)+ 单个卡片网格 -->
@@ -234,6 +249,19 @@
             <div id="history-container"></div>
           </div>
         </div>
+      </div>
+
+      <!-- 右侧 diff 面板:点击暂存/更改中的文件时展示差异 -->
+      <div id="diff-panel" class="hidden">
+        <div class="diff-head">
+          <span id="diff-title" class="diff-title">差异</span>
+          <button class="icon-btn" id="btn-diff-close" title="关闭 diff 面板">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div id="diff-content" class="diff-content"></div>
+        <div id="diff-resizer" title="拖动调整宽度"></div>
+      </div>
       </div>
 
       <!-- 运行服务器面板:命令从左往右平铺,日志区可展开/收起 -->
@@ -326,8 +354,8 @@
       <div class="settings-title">系统设置</div>
       <div class="settings-main">
         <div class="settings-nav">
-          <button class="settings-nav-item active" data-tab="ai"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.4a3 3 0 0 0 1.8 1.8L21 12l-5.4 1.8a3 3 0 0 0-1.8 1.8L12 21l-1.8-5.4a3 3 0 0 0-1.8-1.8L3 12l5.4-1.8a3 3 0 0 0 1.8-1.8z"/></svg>AI 模型配置</button>
-          <button class="settings-nav-item" data-tab="commit"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>提交推送配置</button>
+          <button class="settings-nav-item active" data-tab="ai">AI 模型配置</button>
+          <button class="settings-nav-item" data-tab="commit">提交推送配置</button>
         </div>
         <div class="settings-body">
           <div class="settings-tab" data-tab="ai">
@@ -348,13 +376,13 @@
             <label class="field">
               <span>提交模式</span>
               <select id="set-commit-mode">
-                <option value="auto">直接提交（AI 生成后自动提交）</option>
-                <option value="confirm">确认后提交（生成后展示，可修改）</option>
+                <option value="auto">直接提交</option>
+                <option value="confirm">确认后提交</option>
               </select>
             </label>
             <label class="field">
-              <span>额外要求（可选）</span>
-              <textarea id="set-custom-prompt" rows="4" placeholder="补充你对提交信息的偏好，例如：正文不超过 3 条；关联工单号；侧重说明性能影响…"></textarea>
+              <span>额外要求</span>
+              <textarea id="set-custom-prompt" rows="4" placeholder="补充说明提交偏好，例如使用英文评论"></textarea>
             </label>
           </div>
         </div>
@@ -411,21 +439,11 @@
       </div>
     </div>
   </div>
-  <!-- diff 视图 -->
-  <div class="overlay hidden" id="dlg-diff">
-    <div class="dialog dialog-diff">
-      <h3 id="diff-title">差异</h3>
-      <div id="diff-content" class="diff-content"></div>
-      <div class="dlg-actions">
-        <span class="spacer"></span>
-        <button class="tool-btn primary" id="btn-diff-close">关闭</button>
-      </div>
-    </div>
-  </div>
   <div id="toast"></div>
 
-  <!-- 侧栏右键菜单(目前仅「关闭项目」,后续可扩展) -->
+  <!-- 侧栏右键菜单(侧栏项目 + 项目卡片 ⋯ 共用) -->
   <div id="ctx-menu" class="ctx-menu hidden">
+    <button id="ctx-open-dir">打开本地目录</button>
     <button id="ctx-close">关闭项目</button>
   </div>
 

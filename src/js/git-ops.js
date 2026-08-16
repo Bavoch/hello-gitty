@@ -79,14 +79,21 @@ export async function toggleStage(path, unstage) {
 }
 
 /* ===== 提交(AI 流式) ===== */
-let popState = "idle";     // 提交弹窗态:streaming(生成中) / ready(可编辑确认) / idle(关闭)
-let streamCancelled = false; // 软取消:流式中忽略后续事件、不自动提交
-let streamBusy = false;    // 流式 invoke 进行中(含已软取消但后端未返回),用于阻塞重复触发
+// 每个项目独立的面板状态:repo -> {state, msg, cancelled, busy}
+// 面板完全跟随项目:在 A 打开的面板不受 B 的任何操作影响,切走隐藏、切回恢复
+const commitPops = new Map();
+function popOf(repoPath) {
+  if (!repoPath) return null;
+  let p = commitPops.get(repoPath);
+  if (!p) { p = { state: "idle", msg: "", cancelled: false, busy: false }; commitPops.set(repoPath, p); }
+  return p;
+}
 
 async function onCommit() {
   if (!repo) { toast("请先打开项目", false); return; }
-  // 弹窗已开或流式生成进行中时不重复触发
-  if (popState !== "idle" || streamBusy) return;
+  const p = popOf(repo);
+  // 当前项目已有面板(生成中或待确认)时防重入
+  if (p.state !== "idle" || p.busy) return;
   try {
     const st = await invoke("git_status", { repo });
     setLastShipStatus(st); // 让 closeCommitPop 恢复按钮时基于最新状态
@@ -97,25 +104,32 @@ async function onCommit() {
         : "没有可提交的更改", false);
       return;
     }
-    await streamCommitMessage();
+    // 未配置 AI Key:直接进入手动填写面板,跳过 AI 调用(不再绕"AI 失败"的错误流程)
+    if (!(settings.ai.api_key || "").trim()) {
+      toast("未配置 AI API Key，可手动填写提交信息", false);
+      showCommitResult(p, "", "手动填写提交信息");
+      return;
+    }
+    await streamCommitMessage(p);
   } catch (e) {
     toast(String(e), false);
-    // AI 生成失败时 streamCommitMessage 会把弹窗切到可编辑手填态(popState=ready),保留;
-    // 这里只关闭 status 阶段失败留下的空弹窗
-    if (popState === "streaming") closeCommitPop();
+    // AI 生成失败时 streamCommitMessage 会把面板切到可编辑手填态,保留;
+    // 这里只关闭 status 阶段失败留下的空面板
+    if (p.state === "streaming") closeCommitPop(p);
   }
 }
 
 // 开始生成:仅提交按钮转加载态,不弹窗(结果面板等生成完成后才出现)
-function startCommitStreaming() {
-  popState = "streaming";
-  streamCancelled = false;
+function startCommitStreaming(p) {
+  p.state = "streaming";
+  p.cancelled = false;
   setButtonLoading($("btn-commit"), true, "AI 生成评论中…");
 }
 
 // 生成完成:弹出结果面板,输入框可编辑,供用户确认/修改后提交或取消
-function showCommitResult(msg, ph) {
-  popState = "ready";
+function showCommitResult(p, msg, ph) {
+  p.state = "ready";
+  p.msg = msg;
   const ta = $("commit-stream-text");
   ta.value = msg;
   ta.readOnly = false;
@@ -124,48 +138,74 @@ function showCommitResult(msg, ph) {
   // 提交按钮退出加载态;面板打开期间保持禁用防重复触发
   const cb = $("btn-commit");
   if (cb) { setButtonLoading(cb, false); cb.disabled = true; }
+  ta.setSelectionRange(0, 0); // 光标置于开头,避免聚焦后自动滚到结尾
   ta.focus();
+  ta.scrollTop = 0; // 展示从开头开始(聚焦可能把光标滚入视野,故在其后归零)
 }
 
-function closeCommitPop() {
-  popState = "idle";
+function closeCommitPop(p) {
+  p.state = "idle";
+  p.msg = "";
   $("commit-pop").classList.add("hidden");
   const cb = $("btn-commit");
   if (cb) { setButtonLoading(cb, false); cb.disabled = false; } // 退出加载态并解锁
   refreshShipButtons(); // 按当前仓库状态重建按钮样式/提示
 }
 
+// 项目切换时同步面板显隐:面板跟随所属项目——切走隐藏,切回恢复
+// 切走时先把当前输入框内容存回该项目状态,切回时从状态恢复
+export function syncCommitPop() {
+  const p = popOf(repo);
+  if (p.state === "idle") { $("commit-pop").classList.add("hidden"); return; }
+  // 恢复本项目面板
+  const ta = $("commit-stream-text");
+  ta.value = p.msg;
+  ta.readOnly = p.state === "ready";
+  ta.scrollTop = 0; // 恢复面板同样从开头展示
+  $("commit-pop").classList.remove("hidden");
+  // 按钮态:ready 保持禁用(面板打开中);streaming 保持加载态
+  const cb = $("btn-commit");
+  if (cb) {
+    if (p.state === "ready") { setButtonLoading(cb, false); cb.disabled = true; }
+    else { setButtonLoading(cb, true, "AI 生成评论中…"); }
+  }
+}
+
 // 流式生成:生成期间按钮加载态,完成后弹出结果面板;失败也弹出可手填面板
-async function streamCommitMessage() {
-  startCommitStreaming();
-  streamBusy = true;
+async function streamCommitMessage(p) {
+  const repoPath = repo; // 记录发起项目:await 期间用户可能已切换项目
+  startCommitStreaming(p);
+  p.busy = true;
   let msg = "";
   try {
-    msg = await invoke("ai_commit_message_stream", { settings: settings.ai, repo });
+    msg = await invoke("ai_commit_message_stream", { settings: settings.ai, repo: repoPath });
   } catch (e) {
-    if (streamCancelled) return; // 已软取消:静默
-    showCommitResult("", "AI 生成失败，可手动填写后提交");
+    if (p.cancelled) return; // 已软取消:静默
+    showCommitResult(p, "", "AI 生成失败，可手动填写后提交");
     throw e; // 让调用方 toast 具体错误
   } finally {
-    streamBusy = false;
+    p.busy = false;
   }
-  if (streamCancelled) return;
-  // 生成完成:统一弹出结果面板确认(提交/取消由面板按钮决定)
-  showCommitResult(msg);
+  if (p.cancelled) return;
+  // 生成完成:若已切到其他项目,不弹面板,保留 ready 态等切回时由 syncCommitPop 恢复
+  if (repo === repoPath) showCommitResult(p, msg);
+  else { p.state = "ready"; p.msg = msg; }
 }
 
 // 取消/关闭:流式中软取消(后端继续、前端忽略),否则直接关
 function cancelCommitPop() {
-  if (popState === "streaming") streamCancelled = true;
-  closeCommitPop();
+  const p = popOf(repo);
+  if (p.state === "streaming") p.cancelled = true;
+  closeCommitPop(p);
 }
 
 // 用给定信息提交(供 auto 模式与确认按钮复用),成功后刷新并关闭弹窗
 async function commitWithMessage(msg) {
-  if (popState === "idle") return;
+  const p = popOf(repo);
+  if (p.state === "idle") return;
   msg = (msg || "").trim();
   if (!msg) { toast("提交信息不能为空", false); return; }
-  popState = "idle"; // 阻塞重复触发
+  p.state = "idle"; // 阻塞重复触发
   try {
     const r = await invoke("git_commit", { repo, message: msg });
     if (r && r.ok === false) toast(r.output, false);
@@ -173,7 +213,7 @@ async function commitWithMessage(msg) {
   } catch (e) {
     toast(String(e), false);
   }
-  closeCommitPop();
+  closeCommitPop(p);
   await refresh();
 }
 
@@ -396,9 +436,10 @@ export function bindGitEvents() {
   $("btn-commit-cancel").addEventListener("click", cancelCommitPop);
   $("btn-commit-confirm").addEventListener("click", () => commitWithMessage($("commit-stream-text").value));
   $("commit-stream-text").addEventListener("keydown", (e) => {
-    if (popState === "idle") return;
+    const p = popOf(repo);
+    if (p.state === "idle") return;
     if (e.key === "Escape") { e.preventDefault(); cancelCommitPop(); }
-    else if (e.key === "Enter" && !e.shiftKey && popState === "ready") {
+    else if (e.key === "Enter" && !e.isComposing && !e.shiftKey && p.state === "ready") {
       e.preventDefault();
       commitWithMessage($("commit-stream-text").value);
     }
@@ -431,9 +472,12 @@ export function initGitListeners() {
     $("conflict-current").textContent = `(${p.done}/${p.total}) ${p.path}`;
     $("conflict-fill").style.width = `${Math.round((p.done / p.total) * 100)}%`;
   });
-  // 提交信息流式回填:弹窗打开且未软取消时,用后端推送的累积全文整体写入文本框
+  // 提交信息流式回填:按事件携带的 repo 路由到该项目状态;
+  // 仅当该项目的流未软取消时,把累积全文写入当前输入框(若正显示该项目面板)
   listen("commit-stream", (e) => {
-    if (popState === "idle" || streamCancelled) return;
+    const p = popOf(e.payload?.repo);
+    if (!p || p.state !== "streaming" || p.cancelled) return;
+    if (e.payload?.repo !== repo) return; // 面板所属项目不是当前项目时不写输入框
     const ta = $("commit-stream-text");
     ta.value = e.payload.text;
     ta.scrollTop = ta.scrollHeight; // 流式输出自动滚到底部,始终展示最新生成内容

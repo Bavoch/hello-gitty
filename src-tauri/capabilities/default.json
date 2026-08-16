@@ -3,6 +3,7 @@
   "identifier": "default",
   "description": "主窗口默认能力",
   "windows": ["main"],
+  "platforms": ["macOS", "windows"],
   "permissions": [
     "core:default",
     "core:event:default",

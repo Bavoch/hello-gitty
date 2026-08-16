@@ -9,7 +9,7 @@ export const DEFAULT_AI = { base_url: "https://api.deepseek.com", api_key: "", m
 export const STATUS_CHARS = { A: "A", M: "M", D: "D", R: "R", C: "C", U: "?", "?": "?" };
 
 /* ===== 共享可变状态(setter 供跨模块重绑) ===== */
-export let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [], run_commands: {}, run_urls: {}, run_history: [] };
+export let settings = { ai: { ...DEFAULT_AI }, last_repo: null, repos: [], run_commands: {}, run_urls: {}, run_history: [], diff_width: null };
 export let repos = []; // 侧栏仓库摘要列表
 export let repo = null; // 当前仓库路径
 export let view = "repo"; // 主区视图:repo(单项目面板) | overview(多仓库总览)
@@ -125,16 +125,16 @@ export function relTimeShort(ts) {
 
 /* ===== 无图标项目的字母头像 ===== */
 // 10 种高区分度配色(与主题暗色系协调),按路径哈希稳定分配。
-// 实色填充背景 + 深色字母(#1e1e1e 与主题底色一致,对比度高,
+// 实色填充背景 + 深色字母(与主题底色一致,对比度高,
 // 同数字角标「主题色底 + 深字」的做法)
 const AVATAR_COLORS = [
-  "#f48771", "#89d185", "#dcdcaa", "#75beff", "#c792ea",
-  "#f78c6c", "#80cbc4", "#82aaff", "#ffcb6b", "#f07178",
+  "var(--status-danger)", "var(--status-add)", "var(--status-modified)", "var(--status-blue)", "var(--status-remote)",
+  "var(--avatar-orange)", "var(--avatar-teal)", "var(--avatar-blue)", "var(--avatar-yellow)", "var(--avatar-red)",
 ];
 
 // 按路径哈希取配色:不同项目大概率不同色,同一项目每次渲染颜色稳定
 export function repoAvatarColor(path) {
   let h = 0;
   for (let i = 0; i < path.length; i++) h = (h * 31 + path.charCodeAt(i)) >>> 0;
-  return { bg: AVATAR_COLORS[h % AVATAR_COLORS.length], fg: "#1e1e1e" };
+  return { bg: AVATAR_COLORS[h % AVATAR_COLORS.length], fg: "var(--text-inverse)" };
 }

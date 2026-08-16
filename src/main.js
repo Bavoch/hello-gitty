@@ -33,6 +33,8 @@ async function init() {
   let sbw = settings.sidebar_width || 172;
   if (settings.sidebar_collapsed && sbw > SIDEBAR_COMPACT_MAX) sbw = 48; // 兼容旧配置
   $("sidebar").style.width = sbw + "px";
+  // 恢复右侧 diff 面板宽度(拖拽调整过则用记忆值)
+  if (settings.diff_width) $("diff-panel").style.width = settings.diff_width + "px";
 
   bindSidebarEvents();
   bindPanelEvents();
@@ -52,7 +54,9 @@ async function init() {
     await refresh();
     fetchRemote(); // 启动时后台核对一次远程状态
   } else {
-    showEmpty(false);
+    // 无项目:默认选中「首页」Tab,右侧展示新建项目空态(而非空白)
+    const { showOverview } = await import("./js/dashboard.js");
+    await showOverview();
   }
   syncRunPanel(); // 运行面板:回填命令、刷新日志与运行态
   syncRunToggle(); // 展开/收起按钮初始态(日志区默认收起,箭头朝下)
@@ -112,6 +116,7 @@ function bindDialogEvents() {
 function bindGlobalDismiss() {
   document.addEventListener("click", () => {
     $("more-menu").classList.add("hidden");
+    $("dash-more-menu").classList.add("hidden");
     $("branch-menu").classList.add("hidden");
     closeCtxMenu();
   });
@@ -123,7 +128,12 @@ function bindGlobalDismiss() {
     if (el?.classList?.contains("run-cmd-select")) el.blur();
   }, true);
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { $("more-menu").classList.add("hidden"); closeCtxMenu(); }
+    if (e.key === "Escape") {
+      $("more-menu").classList.add("hidden");
+      $("dash-more-menu").classList.add("hidden");
+      $("diff-panel").classList.add("hidden"); // ESC 收起右侧 diff 面板
+      closeCtxMenu();
+    }
   });
   window.addEventListener("scroll", closeCtxMenu, true);
 }

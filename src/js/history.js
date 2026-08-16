@@ -33,6 +33,12 @@ function commitRow(c, headHash) {
   caret.innerHTML = '<svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   main.appendChild(caret);
 
+  const msg = document.createElement("span");
+  msg.className = "commit-msg";
+  msg.textContent = c.subject;
+  main.appendChild(msg);
+
+  // 本地/远程图标置于行尾、时间左侧(随 meta 一起在悬停时让位给回退按钮)
   const loci = document.createElement("span");
   loci.className = "commit-loci";
   const loc = document.createElement("span");
@@ -47,19 +53,14 @@ function commitRow(c, headHash) {
   rem.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
   if (!c.remote) rem.classList.add("none");
   loci.appendChild(rem);
-  main.appendChild(loci);
 
-  const msg = document.createElement("span");
-  msg.className = "commit-msg";
-  msg.textContent = c.subject;
-  main.appendChild(msg);
   const time = document.createElement("span");
   time.className = "commit-time";
   time.textContent = relTimeShort(c.timestamp);
   time.title = relTime(c.timestamp);
   const meta = document.createElement("span");
   meta.className = "commit-meta";
-  meta.append(time);
+  meta.append(loci, time);
   main.appendChild(meta);
 
   const rb = document.createElement("button");

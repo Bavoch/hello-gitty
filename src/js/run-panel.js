@@ -51,12 +51,19 @@ function appendRunLine(cls, text, skipBuffer) {
   log.scrollTop = log.scrollHeight; // 自动滚到底
 }
 
-// 从当前仓库的缓冲重建日志区(切换仓库时调用)
+// 从当前仓库的缓冲重建日志区(切换仓库时调用);无日志时显示占位提示
 function renderRunLog() {
   const log = $("run-log");
   if (!log) return;
   log.textContent = "";
   const lines = (repo && runLogs[repo]) || [];
+  if (!lines.length) {
+    const empty = document.createElement("div");
+    empty.className = "run-log-empty";
+    empty.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg><span>暂无运行日志</span>';
+    log.appendChild(empty);
+    return;
+  }
   for (const ln of lines) appendRunLine(ln.cls, ln.text, true);
 }
 
@@ -81,11 +88,17 @@ function updateRunUrl() {
   el.onclick = () => invoke("open_url", { url: u });
 }
 
+// 运行态变化后同步侧栏「运行中」绿点(动态 import 断开与 sidebar 的循环依赖)
+function syncRunDots() {
+  import("./sidebar.js").then(({ updateRepoRunDots }) => updateRepoRunDots()).catch(() => {});
+}
+
 // 平铺渲染全部识别命令 chip:空闲=▶+文本;运行中(本应用启动或外部运行)=可停止→⏹+文本 / 不可停止→▶常亮;
 // 运行中其他 chip 禁用;外部占用但无法归因到某条命令时全部禁用
 function renderRunCmds() {
   const wrap = $("run-cmds");
   if (!wrap) return;
+  syncRunDots(); // 运行态重渲染时一并同步侧栏绿点
   updateRunUrl();
   wrap.textContent = "";
   if (!repo) return;
@@ -154,7 +167,7 @@ async function chipClick(it, extHit) {
     }
     return;
   }
-  // 外部运行命中:进程归属已确认(lsof + cwd 校验)→ 停止;未确认 → 说明不可停
+  // 外部运行命中:端口进程与项目归属均已确认 → 停止;未确认 → 说明不可停
   if (extHit) {
     if (extHit.pid) {
       runBusy = true;
@@ -298,6 +311,7 @@ export async function startServerFor(path, cmd) {
     await invoke("server_start", { repo: path, command: cmd });
     runState[path] = true;
     runActiveCmd[path] = cmd;
+    syncRunDots(); // 后端启动不发事件,乐观置运行态后立即点亮侧栏绿点
     touchRunLast(path); // 刷新「上次运行」时间
     if (!runLogs[path]) runLogs[path] = [];
     // 后端启动不发事件(仅退出发),总览态需手动刷新图表
@@ -394,6 +408,7 @@ export function initRunListeners() {
     runState[p.repo] = !!p.running;
     if (p.running && p.command) runActiveCmd[p.repo] = p.command;
     else if (!p.running) runActiveCmd[p.repo] = null;
+    syncRunDots(); // 任意项目启停(含非当前项目)都要同步侧栏绿点
     if (p.repo === repo) renderRunCmds();
     if (!p.running) {
       // 停止后乐观清空该项目的外部运行记录(启动后探测到的端口就是它自己),

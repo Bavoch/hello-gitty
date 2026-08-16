@@ -107,7 +107,7 @@ pub fn render_template(template: &str, diff: &str, log_hint: &str, lang: &str) -
 
 async fn chat(cfg: &AiConfig, system: &str, user: &str) -> Result<String, String> {
     if cfg.api_key.trim().is_empty() {
-        return Err("尚未配置 AI API Key，请点击右上角设置完成配置".into());
+        return Err("尚未配置 AI API Key，请先打开设置完成配置".into());
     }
     let base = cfg.base_url.trim().trim_end_matches('/');
     let url = format!("{base}/chat/completions");
@@ -172,18 +172,36 @@ fn build_commit_prompt(cfg: &AiConfig, repo: &str) -> Result<(String, String), S
     };
     let lang = lang_instruction(&cfg.lang);
 
-    // 固定使用最佳实践预设(常规提交)作为提示词引擎;用户填写的「额外要求」追加到系统提示词
+    // 固定使用最佳实践预设(常规提交)作为提示词引擎;用户填写的「额外要求」是最高优先级指令,
+    // 与预设/语言/近期记录等任何其他规则冲突时一律以它为准,同时注入 system 与 user 双保险
     let p = preset_by_id("conventional").expect("conventional 预设必然存在");
-    let system = if cfg.custom_prompt.trim().is_empty() {
+    let extra = cfg.custom_prompt.trim();
+    let system = if extra.is_empty() {
         p.system.clone()
     } else {
         format!(
-            "{}\n\n【用户额外要求】请在遵循上述规范的基础上优先满足：\n{}",
+            "{}\n\n【用户额外要求·最高优先级】这是用户对本次提交信息的硬性要求，优先于以上所有规则（包括语言、格式、长度约定）:\n{}",
             p.system,
-            cfg.custom_prompt.trim()
+            extra
         )
     };
-    let user = render_template(&p.user_template, &diff, &log_hint, &lang);
+    // 有额外要求时不再注入语言指令:语言归属额外要求管辖,避免与硬编码默认(中文)互相矛盾
+    let lang_for_user = if extra.is_empty() {
+        lang
+    } else {
+        String::new()
+    };
+    let user = render_template(&p.user_template, &diff, &log_hint, &lang_for_user);
+    // 额外要求贴近 diff 注入 user 消息:紧邻输入内容的位置模型遵循度最高
+    let user = if extra.is_empty() {
+        user
+    } else {
+        format!(
+            "{}\n\n【用户额外要求·最高优先级】与系统消息中的任何规则冲突时，一律按以下要求执行：\n{}",
+            user,
+            extra
+        )
+    };
     Ok((system, user))
 }
 
@@ -204,7 +222,7 @@ pub async fn generate_commit_message_stream(
     on_delta: impl Fn(&str) + Send + Sync + 'static,
 ) -> Result<String, String> {
     if cfg.api_key.trim().is_empty() {
-        return Err("尚未配置 AI API Key，请点击右上角设置完成配置".into());
+        return Err("尚未配置 AI API Key，请先打开设置完成配置".into());
     }
     let (system, user) = build_commit_prompt(cfg, repo)?;
     let base = cfg.base_url.trim().trim_end_matches('/');
@@ -354,5 +372,47 @@ mod tests {
     #[test]
     fn default_commit_mode_is_auto() {
         assert_eq!(AiConfig::default().commit_mode, "auto");
+    }
+
+    /// 临时 git 仓库(与 git.rs 测试同款模式)
+    fn temp_repo(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("hellogitty-ai-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let r = dir.to_str().unwrap();
+        crate::git::run_git(r, &["init", "-q"]).unwrap();
+        crate::git::run_git(r, &["config", "user.email", "test@example.com"]).unwrap();
+        crate::git::run_git(r, &["config", "user.name", "test"]).unwrap();
+        dir
+    }
+
+    #[test]
+    fn custom_prompt_is_highest_priority() {
+        let repo = temp_repo("custom-prompt");
+        std::fs::write(repo.join("a.txt"), "hello").unwrap();
+        crate::git::run_git(repo.to_str().unwrap(), &["add", "a.txt"]).unwrap();
+
+        let base = AiConfig {
+            custom_prompt: "使用英文撰写提交信息".into(),
+            ..AiConfig::default()
+        };
+        let (system, user) = build_commit_prompt(&base, repo.to_str().unwrap()).unwrap();
+
+        // system 与 user 都包含最高优先级声明 + 用户原文
+        assert!(system.contains("最高优先级"));
+        assert!(system.contains("使用英文撰写提交信息"));
+        assert!(user.contains("最高优先级"));
+        assert!(user.contains("使用英文撰写提交信息"));
+        // 有额外要求时,语言指令(简体中文)被抑制,避免与额外要求冲突
+        assert!(!user.contains("简体中文"));
+
+        // 无额外要求时保持原行为:语言指令正常注入
+        let none = AiConfig::default();
+        let (_, user_none) = build_commit_prompt(&none, repo.to_str().unwrap()).unwrap();
+        assert!(user_none.contains("简体中文"));
+        assert!(!user_none.contains("最高优先级"));
+
+        std::fs::remove_dir_all(repo).ok();
     }
 }

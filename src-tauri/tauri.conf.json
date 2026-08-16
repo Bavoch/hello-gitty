@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../src",
     "devUrl": "http://localhost:1421",
-    "beforeDevCommand": "python3 scripts/dev_server.py 1421 ./src",
+    "beforeDevCommand": "node scripts/dev_server.mjs 1421 ./src",
     "beforeBuildCommand": ""
   },
   "app": {
@@ -28,7 +28,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "publisher": "Bavoch",
+    "homepage": "https://github.com/Bavoch/hello-gitty",
+    "copyright": "Copyright © Bavoch",
+    "license": "MIT",
     "category": "DeveloperTool",
     "icon": [
       "icons/32x32.png",

@@ -4,6 +4,10 @@ src-tauri/target/
 src-tauri/gen/
 dist/
 *.dmg
+*.msi
+*-setup.exe
+__pycache__/
+*.pyc
 
 # 系统
 .DS_Store

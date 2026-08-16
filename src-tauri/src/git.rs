@@ -1,7 +1,8 @@
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
-use std::process::Command;
 use std::sync::{Arc, Mutex};
+
+use crate::process::command;
 
 pub const MAX_AI_DIFF_BYTES: usize = 60_000;
 
@@ -63,7 +64,7 @@ fn is_lock_error(msg: &str) -> bool {
 /// 超过 60 秒仍存在的锁才视为残留——正常写操作远快于此;太新的锁可能是
 /// 其他工具正在进行中的操作,不处理。
 fn remove_stale_index_lock(repo: &str) -> bool {
-    let gd = match Command::new("git")
+    let gd = match command("git")
         .arg("-C")
         .arg(repo)
         .args(["rev-parse", "--git-dir"])
@@ -108,7 +109,7 @@ fn run_git_impl(repo: &str, args: &[&str], retried: bool) -> Result<String, Stri
 }
 
 fn run_git_inner(repo: &str, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
+    let out = command("git")
         .arg("-C")
         .arg(repo)
         .args(args)
@@ -148,7 +149,7 @@ fn git_stdin_impl(repo: &str, args: &[&str], input: &str, retried: bool) -> Resu
 }
 
 fn git_stdin_inner(repo: &str, args: &[&str], input: &str) -> Result<String, String> {
-    let mut child = Command::new("git")
+    let mut child = command("git")
         .arg("-C")
         .arg(repo)
         .args(args)
@@ -625,6 +626,61 @@ pub fn commit_days(repo: &str, since: i64) -> Vec<CommitDay> {
     .unwrap_or_default()
 }
 
+/// 单个仓库在指定时间点之后的代码量(新增/删除行数),按作者日期聚合为本地日历日。
+/// --numstat 逐文件给出 增\t删\t路径,二进制文件为 -\t-\t路径(不计入);
+/// 与 --format=%ad 混排时日期行(无制表符)作为归属日的标记
+#[derive(Serialize, Clone)]
+pub struct CodeDay {
+    pub date: String,
+    pub add: usize,
+    pub del: usize,
+}
+
+pub fn code_days(repo: &str, since: i64) -> Vec<CodeDay> {
+    let since = format!("--since=@{since}");
+    run_git(
+        repo,
+        &[
+            "log", "HEAD", &since, "--date=short",
+            "--pretty=format:%ad", "--numstat",
+        ],
+    )
+    .map(|out| {
+        let mut days: Vec<CodeDay> = Vec::new();
+        for line in out.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            // 日期标记行:yyyy-mm-dd 且不含制表符(numstat 行必含两个制表符)
+            if !line.contains('\t')
+                && line.len() == 10
+                && line.as_bytes()[4] == b'-'
+                && line.as_bytes()[7] == b'-'
+            {
+                // 同日多笔提交:延续上一组,不新开
+                if days.last().map(|d| d.date != line).unwrap_or(true) {
+                    days.push(CodeDay { date: line.to_string(), add: 0, del: 0 });
+                }
+                continue;
+            }
+            let mut it = line.split('\t');
+            let (add, del) = match (it.next(), it.next()) {
+                (Some(a), Some(d)) => (a.parse::<usize>(), d.parse::<usize>()),
+                _ => continue,
+            };
+            if let (Ok(a), Ok(d)) = (add, del) {
+                if let Some(day) = days.last_mut() {
+                    day.add += a;
+                    day.del += d;
+                }
+            }
+        }
+        days
+    })
+    .unwrap_or_default()
+}
+
 #[derive(Serialize, Clone)]
 pub struct CommitInfo {
     pub hash: String,
@@ -656,6 +712,8 @@ pub fn log_ref(repo: &str, r: &str, n: usize) -> Vec<CommitInfo> {
     .map(|o| {
         o.split('\0')
             .filter_map(|rec| {
+                // git 在每条自定义 format 记录后仍追加换行；第二条起会以 \n（Windows 为 \r\n）开头。
+                let rec = rec.trim_start_matches(['\r', '\n']);
                 let mut p = rec.splitn(6, '\t');
                 Some(CommitInfo {
                     hash: p.next()?.to_string(),

@@ -9,9 +9,9 @@
 - 本仓库依赖系统 `git` CLI
 
 ```bash
-npm install
-npm run dev    # 开发模式（需 python3 提供静态服务）
-npm run build  # 打包 .app / .dmg
+npm ci
+npm run dev    # 开发模式
+npm run build  # 当前系统原生安装包：macOS .dmg / Windows NSIS setup.exe
 ```
 
 ## 提 Issue
@@ -23,7 +23,7 @@ npm run build  # 打包 .app / .dmg
 ## 提 PR
 
 1. Fork 本仓库并新建分支：`git checkout -b feat/your-feature`
-2. 提交前跑一遍 `npm run build:debug` 确保能编译。
+2. 提交前执行 `cargo test --manifest-path src-tauri/Cargo.toml` 与 `npm run build:debug`。
 3. 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/)（如 `feat:`、`fix:`、`refactor:`）。
 4. 确保 PR 描述清楚改动内容和动机，关联相关 Issue。
 

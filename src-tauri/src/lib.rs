@@ -1,6 +1,7 @@
 mod ai;
 mod config;
 mod git;
+mod process;
 mod runner;
 
 use ai::{AiConfig, ConflictOutcome};
@@ -376,6 +377,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn normalizes_platform_paths_for_repo_identity() {
+        let normalized = normalize(r"C:\Work\Hello-Gitty\");
+        if cfg!(windows) {
+            assert_eq!(normalized, "c:/work/hello-gitty");
+        } else {
+            assert_eq!(normalized, "C:/Work/Hello-Gitty");
+        }
+    }
+
+    #[test]
     fn scans_nested_repos_and_skips_deps() {
         let dir = std::env::temp_dir().join(format!("hellogitty-scan-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -672,15 +683,60 @@ async fn repos_activity(repos: Vec<String>, since: i64) -> ActivitySummary {
     .unwrap_or_default()
 }
 
+/// 已添加项目的近 N 日代码量(新增/删除行数),按日期合并后交给总览柱状图。
+/// 同日多仓库累加;无活动的日期不出现在结果中,由前端补零
+#[derive(Serialize, Default)]
+struct CodeVolumeSummary {
+    days: Vec<git::CodeDay>,
+}
+
 #[tauri::command]
-fn repos_add(app: tauri::AppHandle, path: String) -> Result<Vec<String>, String> {
+async fn repos_code_volume(repos: Vec<String>, since: i64) -> CodeVolumeSummary {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut map = std::collections::BTreeMap::<String, (usize, usize)>::new();
+        for path in repos {
+            for day in git::code_days(&path, since) {
+                let e = map.entry(day.date).or_default();
+                e.0 += day.add;
+                e.1 += day.del;
+            }
+        }
+        CodeVolumeSummary {
+            days: map
+                .into_iter()
+                .map(|(date, (add, del))| git::CodeDay { date, add, del })
+                .collect(),
+        }
+    })
+    .await
+    .unwrap_or_default()
+}
+
+#[tauri::command]
+fn repos_add(app: tauri::AppHandle, path: String) -> Result<RepoAddResult, String> {
     let store = SettingsStore::new(&app);
     let mut s = store.load();
-    if !s.repos.iter().any(|p| p == &path) {
+    let key = normalize(&path);
+    let existing = s.repos.iter().find(|p| normalize(p) == key).cloned();
+    let (stored_path, added) = if let Some(existing) = existing {
+        (existing, false)
+    } else {
         s.repos.push(path.clone());
         store.save(&s)?;
-    }
-    Ok(s.repos)
+        (path, true)
+    };
+    Ok(RepoAddResult {
+        repos: s.repos,
+        path: stored_path,
+        added,
+    })
+}
+
+#[derive(Serialize)]
+struct RepoAddResult {
+    repos: Vec<String>,
+    path: String,
+    added: bool,
 }
 
 /// 目录扫描时跳过的子目录(依赖缓存/构建产物,体积大且不可能含独立仓库;隐藏目录另行整体跳过)
@@ -757,7 +813,7 @@ fn scan_repos(dir: &std::path::Path, depth: usize, found: &mut Vec<String>) {
         if name.starts_with('.') {
             continue;
         }
-        if SCAN_SKIP_DIRS.iter().any(|s| *s == name) {
+        if SCAN_SKIP_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
             continue;
         }
         scan_repos(&e.path(), depth + 1, found);
@@ -766,15 +822,21 @@ fn scan_repos(dir: &std::path::Path, depth: usize, found: &mut Vec<String>) {
 
 /// 路径归一化:去掉尾部分隔符,统一用于重复判断(不做 canonicalize,避免未存在的路径报错)
 fn normalize(p: &str) -> String {
-    p.trim_end_matches('/').trim_end_matches('\\').to_string()
+    let normalized = p.replace('\\', "/").trim_end_matches('/').to_string();
+    if cfg!(windows) {
+        normalized.to_lowercase()
+    } else {
+        normalized
+    }
 }
 
 #[tauri::command]
 fn repos_remove(app: tauri::AppHandle, path: String) -> Result<Vec<String>, String> {
     let store = SettingsStore::new(&app);
     let mut s = store.load();
-    s.repos.retain(|p| p != &path);
-    if s.last_repo.as_deref() == Some(path.as_str()) {
+    let key = normalize(&path);
+    s.repos.retain(|p| normalize(p) != key);
+    if s.last_repo.as_deref().map(normalize).as_deref() == Some(key.as_str()) {
         s.last_repo = None;
     }
     store.save(&s)?;
@@ -786,6 +848,16 @@ fn repos_set_current(app: tauri::AppHandle, path: String) -> Result<(), String> 
     let store = SettingsStore::new(&app);
     let mut s = store.load();
     s.last_repo = Some(path);
+    store.save(&s)
+}
+
+/// 清空全部项目(关闭所有项目)
+#[tauri::command]
+fn repos_clear(app: tauri::AppHandle) -> Result<(), String> {
+    let store = SettingsStore::new(&app);
+    let mut s = store.load();
+    s.repos.clear();
+    s.last_repo = None;
     store.save(&s)
 }
 
@@ -817,7 +889,7 @@ fn gitignore_write(repo: String, content: String) -> Result<(), String> {
 #[tauri::command]
 async fn git_clone(url: String, dest: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let out = std::process::Command::new("git")
+        let out = process::command("git")
             .arg("clone")
             .arg(&url)
             .arg(&dest)
@@ -1177,29 +1249,65 @@ async fn git_push_with_token(repo: String, token: String) -> OpResult {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn open_external_http(url: &str) -> Result<(), String> {
+    let output = std::process::Command::new("open").arg(url).output();
+    let output = output.map_err(|e| format!("无法打开浏览器： {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if detail.is_empty() {
+            "无法打开系统浏览器".into()
+        } else {
+            format!("无法打开浏览器： {detail}")
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_external_http(url: &str) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let operation: Vec<u16> = OsStr::new("open").encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = OsStr::new(url).encode_wide().chain(Some(0)).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    } as isize;
+    if result > 32 {
+        Ok(())
+    } else {
+        Err(format!("无法打开系统浏览器（Windows 错误码 {result}）"))
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn open_external_http(_url: &str) -> Result<(), String> {
+    Err("仅支持 macOS 和 Windows".into())
+}
+
 /// 在系统浏览器打开 GitHub 生成 Token 的页面(预填 repo scope)
 #[tauri::command]
 async fn open_auth_page() -> Result<(), String> {
     let url = "https://github.com/settings/tokens/new?scopes=repo&description=Hello+Gitty";
-    let out = std::process::Command::new("open")
-        .arg(url)
-        .output()
-        .map_err(|e| format!("无法打开浏览器： {e}"))?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "无法打开浏览器： {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ))
-    }
+    open_external_http(url)
 }
 
 /// 把 Token 写入系统钥匙串(git credential approve)
 fn credential_approve(token: &str) -> Result<(), String> {
     use std::io::Write;
     use std::process::Stdio;
-    let mut child = std::process::Command::new("git")
+    let mut child = process::command("git")
         .args(["credential", "approve"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -1290,8 +1398,25 @@ fn gh_authed() -> bool {
 }
 
 fn run_gh(args: &[&str]) -> Result<String, String> {
-    for gh in ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"] {
-        let out = std::process::Command::new(gh).args(args).output().ok();
+    let mut candidates = vec![std::path::PathBuf::from("gh")];
+    #[cfg(target_os = "macos")]
+    candidates.extend([
+        std::path::PathBuf::from("/opt/homebrew/bin/gh"),
+        std::path::PathBuf::from("/usr/local/bin/gh"),
+    ]);
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(program_files) = std::env::var_os("ProgramFiles") {
+            candidates.push(std::path::PathBuf::from(program_files).join("GitHub CLI/gh.exe"));
+        }
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            candidates.push(
+                std::path::PathBuf::from(local_app_data).join("Programs/GitHub CLI/gh.exe"),
+            );
+        }
+    }
+    for gh in candidates {
+        let out = process::command(&gh).args(args).output().ok();
         if let Some(o) = out {
             let text = String::from_utf8_lossy(&o.stdout).to_string();
             if o.status.success() {
@@ -1311,7 +1436,7 @@ fn run_gh(args: &[&str]) -> Result<String, String> {
 fn system_github_token() -> Option<String> {
     use std::io::Write;
     use std::process::Stdio;
-    let mut child = std::process::Command::new("git")
+    let mut child = process::command("git")
         .args(["credential", "fill"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1376,7 +1501,8 @@ async fn ai_commit_message(settings: AiConfig, repo: String) -> Result<String, S
     ai::generate_commit_message(&settings, &repo).await
 }
 
-/// 流式生成提交信息:每收到一段就经 commit-stream 事件推送当前累积全文,返回最终全文
+/// 流式生成提交信息:每收到一段就经 commit-stream 事件推送当前累积全文,返回最终全文。
+/// 事件携带 repo,前端可区分是哪个项目的流(多项目面板独立时必要)
 #[tauri::command]
 async fn ai_commit_message_stream(
     app: tauri::AppHandle,
@@ -1384,8 +1510,12 @@ async fn ai_commit_message_stream(
     repo: String,
 ) -> Result<String, String> {
     let handle = app.clone();
+    let repo_tag = repo.clone();
     ai::generate_commit_message_stream(&settings, &repo, move |text| {
-        let _ = handle.emit("commit-stream", serde_json::json!({ "text": text }));
+        let _ = handle.emit(
+            "commit-stream",
+            serde_json::json!({ "text": text, "repo": repo_tag }),
+        );
     })
     .await
 }
@@ -1529,7 +1659,7 @@ async fn server_ports_all(repos: Vec<String>) -> std::collections::HashMap<Strin
 }
 
 /// 停止外部运行的进程:先确认占用端口的进程工作目录属于该仓库(防误杀),
-/// 再对监听 PID 的整个进程组 SIGTERM/SIGKILL。pid 必须来自 server_external_check 的返回。
+/// 再停止监听 PID 所属的整个进程树。pid 必须来自 server_external_check 的返回。
 #[tauri::command]
 async fn server_external_stop(repo: String, port: u16, pid: i32) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1552,18 +1682,47 @@ fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("仅支持 http/https 链接".into());
     }
-    let out = std::process::Command::new("open")
-        .arg(&url)
+    open_external_http(&url)
+}
+
+/// 在系统文件管理器中打开本地目录(右键菜单「打开本地目录」)
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn open_local_dir(path: String) -> Result<(), String> {
+    let output = std::process::Command::new("open")
+        .arg(&path)
         .output()
-        .map_err(|e| format!("无法打开浏览器： {e}"))?;
-    if out.status.success() {
+        .map_err(|e| format!("无法打开目录： {e}"))?;
+    if output.status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "无法打开浏览器： {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ))
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if detail.is_empty() {
+            "无法打开系统文件管理器".into()
+        } else {
+            format!("无法打开目录： {detail}")
+        })
     }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn open_local_dir(path: String) -> Result<(), String> {
+    let output = std::process::Command::new("explorer")
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("无法打开目录： {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err("无法打开系统文件管理器".into())
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[tauri::command]
+fn open_local_dir(_path: String) -> Result<(), String> {
+    Err("仅支持 macOS 和 Windows".into())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1593,9 +1752,11 @@ pub fn run() {
             window_set_always_on_top,
             repos_status_all,
             repos_activity,
+            repos_code_volume,
             repos_add,
             repos_scan_dir,
             repos_remove,
+            repos_clear,
             repos_set_current,
             git_stage_all,
             git_unstage_all,
@@ -1609,6 +1770,7 @@ pub fn run() {
             git_push_with_token,
             open_auth_page,
             open_url,
+            open_local_dir,
             git_pull,
             git_fetch,
             git_finish_merge,
@@ -1632,7 +1794,7 @@ pub fn run() {
             server_external_stop,
         ])
         .on_window_event(|window, event| {
-            // 关闭窗口不退出应用,隐藏到菜单栏托盘常驻
+            // 关闭窗口不退出应用,隐藏到系统托盘常驻
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -1686,7 +1848,7 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("Hello Gitty 启动失败");
-    // 应用真正退出时(含托盘「退出」、Cmd+Q、Dock 退出):统一关闭所有运行中的服务器,避免孤儿进程
+    // 应用真正退出时(含托盘退出与系统退出操作):统一关闭所有运行中的服务器,避免孤儿进程
     app.run(|app, event| {
         if let tauri::RunEvent::Exit = event {
             runner::kill_all(app);

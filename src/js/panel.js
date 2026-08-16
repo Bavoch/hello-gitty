@@ -11,6 +11,8 @@ const sectionUserSet = new Set(); // 用户手动切换过的分组:自动收起
 export async function refresh() {
   if (!repo) return;
   const targetRepo = repo;
+  // 切换了仓库:右侧 diff 面板属于旧仓库,关闭
+  if (diffRepo && diffRepo !== targetRepo) closeDiffPanel();
   invalidateBranchCache(); // 仓库状态已变(切分支/推送/拉取等),分支缓存作废
   updateProjectHeader(); // 顶部标题栏:当前项目图标 + 名称
   // 一次拉取合并的 status + history(后端复用 status 的 branch 信息,省去重复 git 进程)
@@ -70,6 +72,7 @@ function hideRefreshing() {
 export async function showEmpty(showInit) {
   const { leaveOverview } = await import("./dashboard.js");
   leaveOverview();
+  closeDiffPanel(); // 离开仓库视图,右侧 diff 不再有归属
   // 无项目时隐藏标题栏;当前选中项不是 Git 仓库时仍保留(项目已选定)
   $("project-header").classList.toggle("hidden", !repo);
   $("toolbar").classList.add("hidden"); // 空态无 Git 操作,隐藏顶部工具栏
@@ -245,37 +248,28 @@ function renderList(listId, entries, kind, countEl, mods = "") {
       ig.addEventListener("click", (ev) => { ev.stopPropagation(); askIgnore(e.path); });
       actions.appendChild(ig);
       // 仅未暂存/未跟踪行提供「丢弃」(已跟踪→还原,未跟踪→删除)。
-      // 两步确认:第一次点击变「✓」待确认态,再点一次才丢弃;悬停离开自动复位
+      // 两步确认:第一次点击变「✓」待确认态,再点一次才丢弃;
+      // 光标一旦离开该行立即复原——避免从其他行回来时仍是对勾(误以为仍待确认)
       if (kind === "unstaged") {
         const di = document.createElement("button");
         di.textContent = "丢弃";
         let armed = false;
-        let resetTimer = null;
         const reset = () => {
           if (!armed) return;
           armed = false;
           di.textContent = "丢弃";
           di.classList.remove("armed");
         };
-        // 移开后延迟复位,给用户留出点击确认的时间
-        const scheduleReset = () => {
-          if (!armed) return;
-          clearTimeout(resetTimer);
-          resetTimer = setTimeout(reset, 3000);
-        };
         di.addEventListener("click", (ev) => {
           ev.stopPropagation();
           if (!armed) {
             armed = true; di.textContent = "✓"; di.classList.add("armed");
-            clearTimeout(resetTimer);
             return;
           }
-          clearTimeout(resetTimer);
           reset();
           discardFile(e.path);
         });
-        di.addEventListener("mouseleave", scheduleReset);
-        di.addEventListener("mouseenter", () => clearTimeout(resetTimer));
+        di.addEventListener("mouseleave", reset); // 移开光标立即复原
         actions.appendChild(di);
       }
     }
@@ -327,17 +321,28 @@ function askIgnore(path) {
   $("dlg-ignore").classList.remove("hidden");
 }
 
-// 打开 diff 视图:整行点击查看差异
+// 打开 diff 视图:整行点击在右侧面板展示差异
+let diffRepo = null; // diff 面板当前所属仓库,切换仓库时自动关闭
 async function showDiff(e, kind) {
+  diffRepo = repo;
   $("diff-title").textContent = e.path;
   $("diff-content").innerHTML = '<span class="d-load">加载中…</span>';
-  $("dlg-diff").classList.remove("hidden");
+  $("diff-panel").classList.remove("hidden");
   try {
     const diff = await invoke("git_diff", { repo, path: e.path, staged: kind === "staged" });
+    // 切换了仓库/面板已关闭:丢弃过期结果
+    if (diffRepo !== repo || $("diff-panel").classList.contains("hidden")) return;
     $("diff-content").innerHTML = diff ? renderDiff(diff) : '<span class="d-empty">无差异内容</span>';
   } catch (err) {
+    if (diffRepo !== repo || $("diff-panel").classList.contains("hidden")) return;
     $("diff-content").innerHTML = '<span class="d-empty">' + String(err) + "</span>";
   }
+}
+
+// 关闭右侧 diff 面板
+function closeDiffPanel() {
+  $("diff-panel").classList.add("hidden");
+  $("diff-content").innerHTML = "";
 }
 
 // diff 渲染:只展示实际改动内容,滤掉 git diff 的元信息行
@@ -374,7 +379,31 @@ function normalizeGitignore(text) {
 
 /* ===== 事件绑定 ===== */
 export function bindPanelEvents() {
-  $("btn-diff-close").addEventListener("click", () => $("dlg-diff").classList.add("hidden"));
+  $("btn-diff-close").addEventListener("click", closeDiffPanel);
+
+  // 右侧 diff 面板宽度拖拽调整(与侧栏 resizer 同款交互)
+  const DIFF_W_MIN = 240, DIFF_W_MAX = 900;
+  let diffDragStartX = 0, diffDragStartW = 0;
+  const onDiffDrag = (e) => {
+    // 拖手柄向右 → 面板变宽(手柄在面板左缘,增量取反)
+    const w = Math.min(DIFF_W_MAX, Math.max(DIFF_W_MIN, diffDragStartW + diffDragStartX - e.clientX));
+    $("diff-panel").style.width = w + "px";
+  };
+  const endDiffDrag = () => {
+    document.body.classList.remove("resizing");
+    document.removeEventListener("pointermove", onDiffDrag);
+    settings.diff_width = parseInt($("diff-panel").style.width, 10);
+    invoke("settings_save", { settings }).catch(() => {});
+  };
+  $("diff-resizer").addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    diffDragStartX = e.clientX;
+    diffDragStartW = $("diff-panel").getBoundingClientRect().width;
+    document.body.classList.add("resizing");
+    document.addEventListener("pointermove", onDiffDrag);
+    document.addEventListener("pointerup", endDiffDrag, { once: true });
+  });
+
   $("btn-stage-all").addEventListener("click", () => stageAll(true));
   $("btn-unstage-all").addEventListener("click", () => stageAll(false));
   $("btn-discard-all").addEventListener("click", discardAll);
@@ -383,6 +412,10 @@ export function bindPanelEvents() {
   $("btn-more").addEventListener("click", (e) => {
     e.stopPropagation();
     $("more-menu").classList.toggle("hidden");
+  });
+  $("btn-more-open-dir").addEventListener("click", () => {
+    $("more-menu").classList.add("hidden");
+    if (repo) invoke("open_local_dir", { path: repo }).catch((e) => toast(String(e), false));
   });
   $("btn-more-remove").addEventListener("click", () => {
     $("more-menu").classList.add("hidden");

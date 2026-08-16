@@ -1,0 +1,116 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-package:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check frontend syntax
+        shell: pwsh
+        run: |
+          node --check src/main.js
+          Get-ChildItem src/js/*.js | ForEach-Object { node --check $_.FullName }
+          node --check scripts/dev_server.mjs
+
+      - name: Smoke-test development server
+        shell: pwsh
+        run: |
+          $server = Start-Process node -ArgumentList @("scripts/dev_server.mjs", "18421", "./src") -PassThru -WindowStyle Hidden
+          try {
+            $response = $null
+            foreach ($attempt in 1..20) {
+              try {
+                $response = Invoke-WebRequest "http://127.0.0.1:18421/" -UseBasicParsing
+                break
+              } catch {
+                Start-Sleep -Milliseconds 250
+              }
+            }
+            if ($null -eq $response -or $response.StatusCode -ne 200) {
+              throw "Development server did not become ready"
+            }
+            if ($response.Headers["Cache-Control"] -ne "no-store") {
+              throw "Development server response is cacheable"
+            }
+          } finally {
+            if (-not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }
+
+      - name: Run Windows tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build NSIS installer
+        run: npm run build
+
+      - name: Test installer lifecycle
+        shell: pwsh
+        run: |
+          $setup = Resolve-Path "src-tauri/target/release/bundle/nsis/*-setup.exe"
+          $installDir = Join-Path $env:RUNNER_TEMP "hello-gitty-installed"
+          $installer = Start-Process -FilePath $setup -ArgumentList @("/S", "/D=$installDir") -Wait -PassThru
+          if ($installer.ExitCode -ne 0) {
+            throw "Installer exited with code $($installer.ExitCode)"
+          }
+
+          $exe = Join-Path $installDir "hello-gitty.exe"
+          if (-not (Test-Path $exe)) {
+            throw "Installed executable not found at $exe"
+          }
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            Start-Sleep -Seconds 5
+            if ($process.HasExited) {
+              throw "Installed Hello Gitty exited during startup with code $($process.ExitCode)"
+            }
+          } finally {
+            if (-not $process.HasExited) {
+              taskkill.exe /PID $process.Id /T /F
+            }
+          }
+
+          $uninstaller = Join-Path $installDir "uninstall.exe"
+          if (-not (Test-Path $uninstaller)) {
+            throw "Uninstaller not found at $uninstaller"
+          }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "Uninstaller exited with code $($uninstall.ExitCode)"
+          }
+          Start-Sleep -Seconds 2
+          if (Test-Path $exe) {
+            throw "Executable remains after uninstall"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hello-gitty-windows-x64
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error

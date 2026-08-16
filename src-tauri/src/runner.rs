@@ -7,12 +7,20 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::net::TcpStream;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
+
+#[cfg(windows)]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// 由 lib.rs 通过 app.manage 托管的进程表:仓库路径 -> (运行命令, 子进程)
 /// 记录命令用于 server_status 恢复前端对应命令的运行态
@@ -432,6 +440,7 @@ pub fn probe_ports(repo: &str, extra: &[u16]) -> Vec<ProbedPort> {
 }
 
 /// 定位监听指定端口的进程,并确认其工作目录是否属于该仓库(避免误杀无关进程)。
+#[cfg(unix)]
 fn listening_pid_for_repo(port: u16, repo: &str) -> Option<i32> {
     let out = std::process::Command::new("lsof")
         .args(["-ti", &format!("tcp:{}", port)])
@@ -450,7 +459,42 @@ fn listening_pid_for_repo(port: u16, repo: &str) -> Option<i32> {
     None
 }
 
+#[cfg(windows)]
+fn powershell_output(script: &str) -> Option<std::process::Output> {
+    let mut command = Command::new("powershell.exe");
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+        .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script])
+        .output()
+        .ok()
+}
+
+#[cfg(windows)]
+fn windows_listening_pids(port: u16) -> Vec<i32> {
+    let script = format!(
+        "Get-NetTCPConnection -State Listen -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique"
+    );
+    let Some(output) = powershell_output(&script) else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<i32>().ok())
+        .collect()
+}
+
+#[cfg(windows)]
+fn listening_pid_for_repo(port: u16, repo: &str) -> Option<i32> {
+    windows_listening_pids(port)
+        .into_iter()
+        .find(|pid| pid_cwd_in_repo(*pid, repo))
+}
+
 /// 进程工作目录是否属于该仓库(或其子目录)
+#[cfg(unix)]
 pub fn pid_cwd_in_repo(pid: i32, repo: &str) -> bool {
     let cwd = std::process::Command::new("lsof")
         .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
@@ -469,7 +513,55 @@ pub fn pid_cwd_in_repo(pid: i32, repo: &str) -> bool {
     })
 }
 
+#[cfg(windows)]
+pub fn pid_cwd_in_repo(pid: i32, repo: &str) -> bool {
+    // Windows 不公开进程 cwd；沿父进程链检查命令行与可执行文件路径。
+    // npm/cmd/node 启动的开发服务通常至少有一层命令行包含项目绝对路径。
+    let script = format!(
+        "$p=Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}' -ErrorAction SilentlyContinue; \
+         for($i=0; $null -ne $p -and $i -lt 8; $i++) {{ \
+           Write-Output ($p.ExecutablePath + \"`t\" + $p.CommandLine); \
+           if(-not $p.ParentProcessId) {{ break }}; \
+           $parent=$p.ParentProcessId; \
+           $p=Get-CimInstance Win32_Process -Filter \"ProcessId = $parent\" -ErrorAction SilentlyContinue \
+         }}"
+    );
+    let Some(output) = powershell_output(&script) else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    let root = repo
+        .trim_end_matches(['/', '\\'])
+        .replace('/', "\\")
+        .to_lowercase();
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| line.replace('/', "\\").to_lowercase())
+        .any(|line| context_contains_path(&line, &root))
+}
+
+#[cfg(any(windows, test))]
+fn context_contains_path(context: &str, root: &str) -> bool {
+    let mut from = 0;
+    while let Some(offset) = context[from..].find(root) {
+        let start = from + offset;
+        let end = start + root.len();
+        let before = context[..start].chars().next_back();
+        let boundary = context[end..].chars().next();
+        let before_ok = matches!(before, None | Some('"' | '\'' | ' ' | '\t' | ';' | '='));
+        let after_ok = matches!(boundary, None | Some('\\' | '/' | '"' | '\'' | ' ' | '\t' | ';'));
+        if before_ok && after_ok {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
 /// 某 PID 是否正在监听指定端口(停止前的复查,防 PID 复用/端口易主)
+#[cfg(unix)]
 pub fn pid_listens_port(pid: i32, port: u16) -> bool {
     let out = std::process::Command::new("lsof")
         .args(["-nP", "-i", &format!("tcp:{}", port), "-t"])
@@ -484,10 +576,16 @@ pub fn pid_listens_port(pid: i32, port: u16) -> bool {
         .any(|l| l.trim().parse::<i32>().ok() == Some(pid))
 }
 
+#[cfg(windows)]
+pub fn pid_listens_port(pid: i32, port: u16) -> bool {
+    windows_listening_pids(port).contains(&pid)
+}
+
 /// 停止外部进程:先取监听 PID 的真实进程组号(getpgid)再整组 SIGTERM,2 秒后仍存活再 SIGKILL。
 /// 终端启动的 npm/pnpm 等链式进程,组长是 npm 自身,监听进程只是组员,
 /// 直接 killpg(pid) 会因该组号不存在而静默失败(看似成功实则没停掉)。
 /// 调用前必须已通过 cwd 归属校验。
+#[cfg(unix)]
 pub fn kill_process_group(pid: i32) -> Result<(), String> {
     let pgid = unsafe { libc::getpgid(pid) };
     if pgid < 0 {
@@ -509,12 +607,70 @@ pub fn kill_process_group(pid: i32) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+pub fn kill_process_group(pid: i32) -> Result<(), String> {
+    if !process_alive(pid) {
+        return Ok(());
+    }
+    let mut command = Command::new("taskkill.exe");
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .output()
+        .map_err(|e| format!("无法停止进程 {pid}：{e}"))?;
+    if output.status.success() || !process_alive(pid) {
+        Ok(())
+    } else {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if detail.is_empty() {
+            format!("停止失败：进程 {pid} 仍在运行")
+        } else {
+            format!("停止失败：{detail}")
+        })
+    }
+}
+
 /// 进程是否仍存活(kill 探测)
+#[cfg(unix)]
 fn process_alive(pid: i32) -> bool {
     unsafe { libc::kill(pid, 0) == 0 }
 }
 
-/// 启动一条长驻命令,在仓库目录下经 /bin/sh -c 执行;
+#[cfg(windows)]
+fn process_alive(pid: i32) -> bool {
+    let script = format!("if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}");
+    powershell_output(&script)
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+fn spawn_shell(repo: &str, command: &str) -> std::io::Result<Child> {
+    Command::new("/bin/sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(repo)
+        .process_group(0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}
+
+#[cfg(windows)]
+fn spawn_shell(repo: &str, command: &str) -> std::io::Result<Child> {
+    let mut shell = Command::new("cmd.exe");
+    shell.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    shell
+        .args(["/D", "/S", "/C", command])
+        .current_dir(repo)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}
+
+/// 启动一条长驻命令,在仓库目录下经系统命令解释器执行;
 /// stdout / stderr 逐行经 `server-log` 事件回推,两端 EOF 后经 `server-status` 通知已停止。
 pub fn spawn_server(app: &AppHandle, repo: &str, command: &str) -> Result<(), String> {
     let root = Path::new(repo);
@@ -526,17 +682,8 @@ pub fn spawn_server(app: &AppHandle, repo: &str, command: &str) -> Result<(), St
         return Err("运行命令为空".into());
     }
 
-    // 独立进程组启动:stop 时 killpg 才能连带杀掉 sh 的实际子进程(如 npm/node)
-    let mut child = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(command)
-        .current_dir(repo)
-        .process_group(0)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("启动失败:{e}"))?;
+    // Unix 用独立进程组；Windows 用 CREATE_NEW_PROCESS_GROUP，停止时清理整棵子进程树。
+    let mut child = spawn_shell(repo, command).map_err(|e| format!("启动失败:{e}"))?;
 
     // 取出管道交给读线程;child(含 pid)存入进程表用于 stop
     let stdout = child.stdout.take();
@@ -562,7 +709,7 @@ pub fn spawn_server(app: &AppHandle, repo: &str, command: &str) -> Result<(), St
         let pending = pending.clone();
         std::thread::spawn(move || {
             let reader = std::io::BufReader::new(stream);
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 let _ = app_out.emit(
                     "server-log",
                     serde_json::json!({ "repo": repo_out, "stream": "out", "line": line }),
@@ -583,7 +730,7 @@ pub fn spawn_server(app: &AppHandle, repo: &str, command: &str) -> Result<(), St
         let pending = pending.clone();
         std::thread::spawn(move || {
             let reader = std::io::BufReader::new(stream);
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 let _ = app_err.emit(
                     "server-log",
                     serde_json::json!({ "repo": repo_err, "stream": "err", "line": line }),
@@ -632,7 +779,28 @@ fn finalize(pending: &Mutex<u8>, app: AppHandle, repo: &str) {
 }
 
 /// 停止指定仓库的服务器(若存在且存活)。返回是否实际操作过。
-/// 进程以独立进程组启动,这里 killpg 整个组,确保 npm/node 等实际命令一并退出。
+#[cfg(unix)]
+fn stop_child_tree(child: &mut Child) -> Result<(), String> {
+    let pgid = child.id() as i32;
+    unsafe { libc::killpg(pgid, libc::SIGTERM) };
+    for _ in 0..20 {
+        if child.try_wait().ok().flatten().is_some() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    unsafe { libc::killpg(pgid, libc::SIGKILL) };
+    child.wait().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(windows)]
+fn stop_child_tree(child: &mut Child) -> Result<(), String> {
+    kill_process_group(child.id() as i32)?;
+    let _ = child.wait();
+    Ok(())
+}
+
+/// 进程以独立进程组启动,停止时清理整棵子进程树,确保 npm/node 等实际命令一并退出。
 pub fn stop(app: &AppHandle, repo: &str) -> Result<bool, String> {
     let registry = app.state::<RunRegistry>();
     let mut map = registry.inner().0.lock().map_err(|e| e.to_string())?;
@@ -643,19 +811,7 @@ pub fn stop(app: &AppHandle, repo: &str) -> Result<bool, String> {
     if child.try_wait().ok().flatten().is_some() {
         return Ok(false);
     }
-    let pgid = child.id() as i32;
-    // 先 SIGTERM 优雅退出,最多等 2s;仍存活再 SIGKILL 兜底
-    unsafe { libc::killpg(pgid, libc::SIGTERM) };
-    for _ in 0..20 {
-        if child.try_wait().ok().flatten().is_some() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    if child.try_wait().ok().flatten().is_none() {
-        unsafe { libc::killpg(pgid, libc::SIGKILL) };
-        let _ = child.wait(); // 回收,避免僵尸
-    }
+    stop_child_tree(&mut child)?;
     drop(map);
     let _ = app.emit(
         "server-status",
@@ -683,14 +839,18 @@ pub fn kill_all(app: &AppHandle) {
     let registry = app.state::<RunRegistry>();
     let mut map = registry.inner().0.lock().unwrap_or_else(|e| e.into_inner());
     for (_, (_, mut child)) in map.drain() {
-        let _ = child.kill();
-        let _ = child.wait();
+        if child.try_wait().ok().flatten().is_none() {
+            let _ = stop_child_tree(&mut child);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_ports, detect, detect_all, extract_ports, kill_process_group, probe_port, process_alive};
+    use super::{collect_ports, detect, detect_all, extract_ports, probe_port};
+    use super::context_contains_path;
+    #[cfg(unix)]
+    use super::{kill_process_group, process_alive};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -720,6 +880,52 @@ mod tests {
         assert_eq!(r.cmd, "npm run dev"); // dev 优先级高于 start
         assert!(r.source.contains("dev"));
         fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn windows_process_context_path_requires_boundaries() {
+        let root = r"c:\work\hello-gitty";
+        assert!(context_contains_path(
+            r#"node.exe\t\"c:\work\hello-gitty\node_modules\vite\bin\vite.js\""#,
+            root
+        ));
+        assert!(context_contains_path(
+            r#"cmd.exe\tcmd /c cd c:\work\hello-gitty && npm run dev"#,
+            root
+        ));
+        assert!(!context_contains_path(
+            r#"node.exe\t\"c:\work\hello-gitty-old\server.js\""#,
+            root
+        ));
+        assert!(!context_contains_path(
+            r#"node.exe\t\"d:\copy-c:\work\hello-gitty\server.js\""#,
+            root
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_finds_current_listening_process() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(super::windows_listening_pids(port).contains(&(std::process::id() as i32)));
+        drop(listener);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_stops_spawned_command_tree() {
+        let dir = tmpdir("windows-stop");
+        let mut child = super::spawn_shell(
+            dir.to_str().unwrap(),
+            "ping 127.0.0.1 -n 30 > nul",
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        super::stop_child_tree(&mut child).unwrap();
+        assert!(child.try_wait().unwrap().is_some());
+        fs::remove_dir_all(dir).ok();
     }
 
     #[test]
@@ -839,6 +1045,7 @@ mod tests {
 
     // 复现外部停止 bug 场景:组长(如 npm)与组员(如 dev server)同组,
     // 对组员 pid 调 kill_process_group 必须连带组长整组终止
+    #[cfg(unix)]
     #[test]
     fn kill_process_group_kills_leader_too() {
         use std::os::unix::process::CommandExt;

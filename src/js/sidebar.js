@@ -2,7 +2,7 @@
    + 仓库摘要加载(loadRepos) + 后台 fetch + 仓库切换 */
 import { $, invoke, toast, setButtonLoading, repoAvatarColor, settings, repos, repo, view, setRepos, setRepo, setNumBadge } from "./state.js";
 import { refresh, showRefreshing } from "./panel.js";
-import { syncRunPanel } from "./run-panel.js";
+import { syncRunPanel, runningRepos } from "./run-panel.js";
 
 const SIDEBAR_MIN = 48, SIDEBAR_MAX = 420; // 侧栏拖拽宽度范围
 const SIDEBAR_COMPACT_MAX = 96; // 简洁展示的宽度上限(含);更宽自动切全面展示
@@ -23,16 +23,30 @@ export async function openLocalRepo() {
 
 // 按路径添加项目并切换(供打开本地/拖拽复用)
 export async function addRepoByPath(dir) {
+  // 同步切换到加载占位:隐藏空态 + 立即显示 refreshing(不等 150ms 延迟)。
+  // 占位是绝对定位填满 #main,不参与布局——leaveOverview 显示 toolbar/run-panel
+  // 压缩内容区时,占位始终填满,无空态位移/空白闪烁
+  $("empty-state").classList.add("hidden");
+  $("refreshing-state").classList.remove("hidden");
   const { leaveOverview } = await import("./dashboard.js"); // 拖拽添加可能发生在总览视图:切回仓库视图
   leaveOverview();
+  let result;
   try {
-    settings.repos = await invoke("repos_add", { path: dir });
-  } catch (e) { toast("添加失败：" + e, false); return; }
-  setRepo(dir);
-  settings.last_repo = dir;
-  try { await invoke("repos_set_current", { path: dir }); } catch (_) {}
+    result = await invoke("repos_add", { path: dir });
+    settings.repos = result.repos;
+  } catch (e) {
+    toast("添加失败：" + e, false);
+    // 失败:收起占位,回到空态
+    $("refreshing-state").classList.add("hidden");
+    $("empty-state").classList.remove("hidden");
+    return;
+  }
+  setRepo(result.path);
+  settings.last_repo = result.path;
+  try { await invoke("repos_set_current", { path: result.path }); } catch (_) {}
   await loadRepos();
   await refresh();
+  syncRunPanel(); // 运行栏回填新项目的命令/日志(与 switchRepo 一致,添加也是一次切换)
   fetchRemote(); // 新添加的项目后台核对一次远程状态
 }
 
@@ -64,12 +78,14 @@ export async function doClone() {
   try {
     await invoke("git_clone", { url, dest });
     $("dlg-clone").classList.add("hidden");
-    settings.repos = await invoke("repos_add", { path: dest });
-    setRepo(dest);
-    settings.last_repo = dest;
-    try { await invoke("repos_set_current", { path: dest }); } catch (_) {}
+    const result = await invoke("repos_add", { path: dest });
+    settings.repos = result.repos;
+    setRepo(result.path);
+    settings.last_repo = result.path;
+    try { await invoke("repos_set_current", { path: result.path }); } catch (_) {}
     await loadRepos();
     await refresh();
+    syncRunPanel(); // 运行栏回填新项目的命令/日志(与 switchRepo 一致,克隆也是一次切换)
     toast("克隆成功", true);
     fetchRemote(); // 克隆后核对远程跟踪分支,徽标立即可用
   } catch (e) { toast(String(e), false); }
@@ -79,11 +95,19 @@ export async function doClone() {
 export async function loadRepos() {
   try { setRepos(await invoke("repos_status_all")); }
   catch (_) { /* 扫描失败时保留现有列表,不清空 */ }
+  syncSidebarVisibility(); // 无项目时隐藏侧栏,有项目恢复
   renderRepoList();
   if (view === "overview") {
     const { renderDashboard } = await import("./dashboard.js");
     renderDashboard(); // 总览态:摘要更新后总览行同步重渲染
   }
+}
+
+// 无项目时隐藏侧栏与底部运行栏(初始空态界面更聚焦),添加项目后自动恢复
+export function syncSidebarVisibility() {
+  const empty = repos.length === 0;
+  $("sidebar").classList.toggle("hidden", empty);
+  $("run-panel").classList.toggle("hidden", empty);
 }
 
 /* ===== 后台 fetch ===== */
@@ -117,6 +141,8 @@ export async function switchRepo(path) {
   await refresh();
   fetchRemote(); // 切到新仓库后台核对远程状态
   syncRunPanel(); // 切到新仓库:回填其运行命令、刷新日志与运行态
+  // 提交面板跟随项目:切走隐藏,切回恢复(动态 import 断开与 git-ops 的循环依赖)
+  import("./git-ops.js").then(({ syncCommitPop }) => syncCommitPop()).catch(() => {});
 }
 
 export async function removeRepo(path) {
@@ -128,7 +154,11 @@ export async function removeRepo(path) {
   }
   await loadRepos(); // 总览视图下:列表与总览行已同步更新,主区保持总览不动
   if (view === "overview") return;
-  if (repo) await refresh(); else {
+  if (repo) {
+    await refresh(); // 关闭的是当前项目:自动切到首个剩余项目
+    syncRunPanel();  // 运行栏跟随切换(命令/日志/运行态不再残留已关闭项目)
+  } else {
+    syncRunPanel(); // 已无项目:清空运行栏残留的旧项目命令与日志
     const { showEmpty } = await import("./panel.js");
     await showEmpty(false);
   }
@@ -155,6 +185,7 @@ export function renderRepoList(keepScroll = false) {
   const scrollTop = ul.scrollTop; // 整表重建会重置滚动,保存并在渲染后恢复(拖拽排序/后台刷新不跳动)
   ul.innerHTML = "";
   $("sidebar-empty").classList.toggle("hidden", repos.length > 0);
+  const running = new Set(runningRepos().map((x) => x.repo)); // 运行中项目集(绿点标识)
   for (const r of repos) {
     const li = document.createElement("li");
     // 总览视图下不标记任何项目为选中(选中态属于「总览」入口),避免重渲染时残留旧高亮
@@ -196,7 +227,12 @@ export function renderRepoList(keepScroll = false) {
     name.textContent = r.name;
     info.appendChild(name);
 
-    li.append(ic, info);
+    // 运行中项目:行尾静态绿点(隐藏用 .hidden 占位,运行态变化由 updateRepoRunDots 就地切换)
+    const dot = document.createElement("span");
+    dot.className = "repo-run-dot" + (running.has(r.path) ? "" : " hidden");
+    dot.title = "运行中";
+
+    li.append(ic, info, dot);
     li.addEventListener("click", () => {
       if (suppressClick) { suppressClick = false; return; } // 拖拽刚结束:吞掉合成 click
       switchRepo(r.path);
@@ -217,9 +253,17 @@ export function renderRepoList(keepScroll = false) {
   ul.scrollTop = scrollTop; // 恢复原滚动位置(整表重建会重置)
   // 拖拽重排(keepScroll):严格停在原位置,不做当前项滚动(选中项不在视口时会拉走视图)
   if (keepScroll) return;
-  // 当前项(含新添加的项目)滚动到可视区,避免列表末尾新项在滚动区外不可见
-  const active = ul.querySelector(".repo-item.active");
-  if (active) active.scrollIntoView({ block: "nearest" });
+  // 注意:不做选中项 scrollIntoView——选中项滚动由 updateSidebarActive(切换仓库)负责。
+  // 后台刷新(fetch/状态轮询)重建列表时若强制拉回选中项,会打断用户主动滚动(闪烁/无法滚到底部)
+}
+
+// 就地同步项目列表行尾「运行中」绿点:运行态由 run-panel 维护,其状态变化时调用,不重建列表
+export function updateRepoRunDots() {
+  const running = new Set(runningRepos().map((x) => x.repo));
+  for (const li of $("repo-list").children) {
+    const dot = li.querySelector(".repo-run-dot");
+    if (dot) dot.classList.toggle("hidden", !running.has(li.dataset.path));
+  }
 }
 
 // 按当前宽度自动切换简洁(仅图标)与全面(名称+路径)展示。
@@ -396,6 +440,12 @@ export function bindSidebarEvents() {
   $("btn-clone-confirm").addEventListener("click", doClone);
   $("btn-clone-cancel").addEventListener("click", () => $("dlg-clone").classList.add("hidden"));
   $("btn-init").addEventListener("click", initRepo);
+  // 侧栏右键菜单:打开本地目录(文件管理器)
+  $("ctx-open-dir").addEventListener("click", () => {
+    const path = ctxRepo;
+    closeCtxMenu();
+    if (path) invoke("open_local_dir", { path }).catch((e) => toast(String(e), false));
+  });
   // 侧栏右键菜单:关闭当前右键目标项目
   $("ctx-close").addEventListener("click", () => {
     const path = ctxRepo;
@@ -415,6 +465,7 @@ export function bindSidebarEvents() {
     settings.sidebar_width = parseInt($("sidebar").style.width, 10);
     settings.sidebar_collapsed = $("sidebar").classList.contains("collapsed");
     invoke("settings_save", { settings }).catch(() => {});
+    window.dispatchEvent(new Event("dashboard-layout-change"));
   };
   // 侧栏收起/展开:在简洁(48px)与上次宽度间切换
   $("btn-toggle-sidebar").addEventListener("click", () => {
@@ -429,6 +480,7 @@ export function bindSidebarEvents() {
     applySidebarMode();
     settings.sidebar_collapsed = sb.classList.contains("collapsed");
     invoke("settings_save", { settings }).catch(() => {});
+    window.dispatchEvent(new Event("dashboard-layout-change"));
   });
 
   $("sidebar-resizer").addEventListener("pointerdown", (e) => {
