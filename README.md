@@ -4,6 +4,10 @@
 
 # Hello Gitty 🐱
 
+[![Windows CI](https://github.com/Bavoch/hello-gitty/actions/workflows/windows.yml/badge.svg)](https://github.com/Bavoch/hello-gitty/actions/workflows/windows.yml)
+[![Release](https://img.shields.io/github/v/release/Bavoch/hello-gitty)](https://github.com/Bavoch/hello-gitty/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 轻量桌面 Git 管理工具，为**单人 AI 开发者**定制。
 
 类 VS Code Git 面板，但只保留最常用的操作。提交信息与冲突解决完全交给 AI，开发服务器也能在应用内一键启停——Git、AI、运行三件事，一个 10 MB 的工具闭环。
