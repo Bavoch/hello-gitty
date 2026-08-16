@@ -30,7 +30,7 @@ npm run build  # 当前系统原生安装包：macOS .dmg / Windows NSIS setup.e
 ## 代码规范
 
 - 前端为原生 HTML/CSS/JS（ES Modules），不要引入打包器。
-- Rust 后端沿用现有模块划分（`git.rs` / `ai.rs` / `config.rs` / `lib.rs`）。
+- Rust 后端沿用现有模块划分（`git.rs` / `ai.rs` / `runner.rs` / `process.rs` / `config.rs` / `lib.rs`）。
 - 注释只解释「为什么」，不解释「是什么/怎么做」。
 
 ## 协议

@@ -4,7 +4,7 @@
 
 如果你发现安全漏洞，请**不要**在公开 Issue 中提交详情。
 
-请通过 [GitHub 私密漏洞报告](https://github.com/Bavoch/hello-gitty/security/advisories/new)提交，或通过 GitHub 个人资料页私信联系维护者 [@Bavoch](https://github.com/Bavoch)。
+请通过 [GitHub 私密漏洞报告](https://github.com/Bavoch/hello-gitty/security/advisories/new)提交，或邮件联系 `hello@lumifold.top`。
 
 报告时请尽量包含：
 
@@ -28,4 +28,4 @@
 
 ## 安全边界说明
 
-Hello Gitty 通过调用系统 `git` CLI 工作，AI 请求走你配置的 OpenAI 兼容接口，API Key 仅保存在本机配置文件中，不会上传到任何第三方服务。使用非官方 AI 接口地址时请注意自行评估数据安全。
+Hello Gitty 通过调用系统 `git` CLI 工作，仓库内容默认只留在本机。AI 请求走你在设置中配置的 OpenAI 兼容接口，API Key 仅保存在本机配置文件中，只会在调用该接口时作为鉴权凭证发送给它。请确认所用接口的隐私政策，使用非官方接口地址时注意自行评估数据安全。
