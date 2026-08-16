@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src-tauri/icons/app-icon.png" alt="Hello Gitty" width="120" />
+  <img src="src/favicon.png" alt="Hello Gitty" width="120" />
 </p>
 
 # Hello Gitty 🐱
