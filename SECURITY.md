@@ -29,3 +29,37 @@
 ## 安全边界说明
 
 Hello Gitty 通过调用系统 `git` CLI 工作，仓库内容默认只留在本机。AI 请求走你在设置中配置的 OpenAI 兼容接口，API Key 仅保存在本机配置文件中，只会在调用该接口时作为鉴权凭证发送给它。请确认所用接口的隐私政策，使用非官方接口地址时注意自行评估数据安全。
+
+---
+
+# Security Policy (English)
+
+## Reporting a Vulnerability
+
+If you discover a security vulnerability, please **do not** post the details in a public issue.
+
+Report it via [GitHub private vulnerability reporting](https://github.com/Bavoch/hello-gitty/security/advisories/new), or email `hello@lumifold.top`.
+
+When reporting, please include where possible:
+
+- The vulnerability type (e.g., command injection, path traversal, credential leakage)
+- Reproduction steps or proof-of-concept code
+- The impact scope and affected versions
+- A suggested fix approach (optional)
+
+## Handling Process
+
+1. We will acknowledge the report within 7 days
+2. We will assess the impact and prioritize a fix
+3. Once fixed, we will publish a GitHub Security Advisory and credit the reporter
+
+## Supported Versions
+
+| Version | Supported |
+| --- | --- |
+| Latest release | ✅ |
+| Older versions | ❌ — please upgrade to the latest release |
+
+## Security Notes
+
+Hello Gitty works through your system `git` CLI; repository content stays on your machine by default. AI requests go to the OpenAI-compatible endpoint you configure in Settings. The API key is stored only in the local config file and is sent only to that endpoint as an authentication credential. Review your provider's privacy policy, especially when using unofficial API endpoints.

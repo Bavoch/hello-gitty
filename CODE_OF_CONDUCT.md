@@ -34,10 +34,56 @@
 
 ## 举报
 
-如遇到辱骂、骚扰或其他不可接受的行为，可通过 [GitHub 私密漏洞报告页面](https://github.com/Bavoch/hello-gitty/security/advisories/new)或私信 [@Bavoch](https://github.com/Bavoch) 向维护者举报。所有投诉都会被及时、公正地审查和调查。
+如遇到辱骂、骚扰或其他不可接受的行为，可通过邮件联系 `hello@lumifold.top` 向维护者举报。所有投诉都会被及时、公正地审查和调查。
 
 所有社区维护者都有义务保护举报者的隐私和安全。
 
 ## 出处
 
 本行为准则基于 [Contributor Covenant](https://www.contributor-covenant.org) 2.1 版改编。
+
+---
+
+# Code of Conduct (English)
+
+## Our Pledge
+
+To foster an open and welcoming community, we pledge to make participation in this project a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
+
+We commit to acting and interacting in ways that contribute to an open, diverse, and inclusive community.
+
+## Our Standards
+
+Examples of behavior that helps create a positive environment include:
+
+- Demonstrating empathy and kindness toward others
+- Being respectful of differing opinions, viewpoints, and experiences
+- Giving and gracefully accepting constructive feedback
+- Accepting responsibility, apologizing to those affected by our mistakes, and learning from the experience
+- Focusing on what is best not just for us as individuals, but for the overall community
+
+Examples of unacceptable behavior include:
+
+- The use of sexualized language or imagery, and any form of sexual attention or advances
+- Trolling, insulting or derogatory comments, and personal or political attacks
+- Public or private harassment
+- Publishing others' private information without their explicit permission
+- Other conduct which could reasonably be considered inappropriate in a professional setting
+
+## Responsibility and Enforcement
+
+Community maintainers are responsible for clarifying and enforcing the standards of acceptable behavior and will take fair and appropriate corrective action against any behavior deemed inappropriate, threatening, offensive, or harmful.
+
+## Scope
+
+This Code of Conduct applies in all community spaces and also applies when an individual is officially representing the community in public spaces.
+
+## Reporting
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the maintainers via email at `hello@lumifold.top`. All complaints will be reviewed and investigated promptly and fairly.
+
+Community maintainers have the obligation to protect the privacy and safety of reporters.
+
+## Attribution
+
+This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1.

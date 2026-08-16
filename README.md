@@ -8,6 +8,8 @@
 [![Release](https://img.shields.io/github/v/release/Bavoch/hello-gitty)](https://github.com/Bavoch/hello-gitty/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+简体中文 | [English](README.en.md)
+
 Hello Gitty 是一款专为单人 AI 开发者打造的 Git 管理工具。
 
 在使用 AI 进行开发时，我通常很少直接阅读代码，因此 IDE 中的大部分功能对我来说并不必要。很多时候，我只是想管理 Git、控制版本或撤销操作，却不得不打开庞大的 VsCode，只为使用左侧那一小块 Git 面板。与此同时，开发多个项目还意味着要打开多个 VsCode 窗口，不仅占用内存，也不够简洁优雅。

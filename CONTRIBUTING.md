@@ -1,5 +1,7 @@
 # 贡献指南
 
+简体中文 | [English](CONTRIBUTING.en.md)
+
 感谢你愿意为 Hello Gitty 贡献代码！请花几分钟读完这份指南。
 
 ## 开发环境
