@@ -762,6 +762,8 @@ body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none
 }
 .dlg-actions { display: flex; align-items: center; gap: 8px; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-head); }
+/* 纵向布局下按钮按内容自适应宽度,不撑满整行 */
+.field > .tool-btn { align-self: flex-start; }
 
 #set-custom-prompt { min-height: 72px; resize: vertical; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; }
 
@@ -804,6 +806,11 @@ body.resizing-vertical { cursor: row-resize; user-select: none; -webkit-user-sel
   height: 30px; padding: 0 10px; /* 紧凑行高,独立于侧栏底栏的 --bar-h */
 }
 .run-head .icon-btn { width: 22px; height: 22px; }
+.run-log-footer {
+  flex: none; display: flex; justify-content: flex-end; align-items: center;
+  min-height: 28px; padding: 0 10px; border-top: 1px solid var(--border);
+}
+#run-panel.closed .run-log-footer { display: none; }
 .run-copy { color: var(--text-dim); }
 .run-copy:hover { color: var(--text); }
 .run-collapse svg { width: 12px; height: 12px; }
@@ -830,6 +837,8 @@ body.resizing-vertical { cursor: row-resize; user-select: none; -webkit-user-sel
 .run-chip.running { color: var(--green); background: var(--status-add-faint); }
 .run-chip.running:hover:not(.disabled) { color: var(--green); background: var(--status-add-soft); }
 .run-chip.disabled { opacity: 0.4; cursor: not-allowed; }
+/* 隐藏命令的折叠入口:弱化,与可运行的命令 chip 区分 */
+.run-chip.run-more-btn { color: var(--text-dim); letter-spacing: 2px; padding: 2px 8px; }
 .run-cmds-empty { font-size: 11px; color: var(--text-dim); padding: 0 4px; }
 .run-spacer { flex: 1; }
 /* 运行栏右侧地址:运行中显示端口,点击在浏览器打开(显示形式与总览卡片一致) */
@@ -1054,8 +1063,6 @@ button.repo-item.overview-item {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .run-card .bar-ic { flex: none; }
-.run-pill { flex: none; font-size: 10.5px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
-.run-pill.self { background: var(--accent-faint); color: var(--accent-bright); }
 .run-card-url {
   font-size: 11px; font-family: var(--mono); color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1176,7 +1183,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .run-card { padding: 16px; border-color: var(--border); background: var(--surface-3); }
 .run-card:hover { background: var(--hover); border-color: var(--border-strong); }
 .run-card-name { font-family: var(--mono); font-size: 12px; }
-.run-pill { border-radius: 0; background: transparent !important; border: 1px solid var(--green); color: var(--green) !important; font-family: var(--mono); }
 .run-card-url { color: var(--blue); }
 .run-card-actions .mini-btn.halt { border-radius: 0; color: var(--green); background: transparent; border-color: var(--green); }
 
@@ -1205,7 +1211,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 button, input, textarea, select,
 .tool-btn, .icon-btn, .mini-btn, .run-chip, .branch-item, .repo-item,
 .dash-tab, .run-cmd-select, .card-more, .rollback, .settings-nav-item,
-.ig-check, .run-pill, .ch-badge, .st {
+.ig-check, .ch-badge, .st {
   border-radius: 0 !important;
 }
 

@@ -518,19 +518,13 @@ function runCard(r, x) {
   card.className = "run-card";
   card.addEventListener("click", () => switchRepo(r.path)); // 点卡片空白处进入项目
 
-  // 头部:项目名 | 状态徽章(仅运行中显示「运行中」)| 更多按钮(右上角)
+  // 头部:项目名 | 更多按钮(右上角)(运行状态由操作区的运行/停止按钮体现,不再加徽章)
   const head = document.createElement("div");
   head.className = "run-card-head";
   const name = document.createElement("span");
   name.className = "run-card-name";
   name.textContent = r.name;
   head.append(name);
-  if (x && x.self) {
-    const pill = document.createElement("span");
-    pill.className = "run-pill self";
-    pill.textContent = "运行中";
-    head.append(pill);
-  }
   const more = document.createElement("button");
   more.className = "card-more";
   more.title = "更多操作";

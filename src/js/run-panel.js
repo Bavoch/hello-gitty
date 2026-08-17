@@ -16,8 +16,21 @@ const runLogs = {};   // repo -> [{ cls: "" | "err" | "sys", text }]
 const runState = {};  // repo -> Boolean(本应用启动的进程是否运行中)
 const runActiveCmd = {}; // repo -> 运行中的命令文本(前端据此定位对应 chip 的运行态)
 const extRun = {};    // repo -> [{port, source}] 外部检测到的占用端口
+const staticRunPorts = {}; // repo -> [{port, source}] 从项目配置读取的预期端口
 let runCmdOptions = []; // 当前仓库的识别候选[{cmd, source, stoppable}],供平铺展示
+let runAllCmds = [];    // 未过滤的完整候选(隐藏命令菜单用)
 let runBusy = false;  // 当前仓库启动/停止进行中,防重复触发
+let runCtxCmd = null; // 运行命令右键菜单的目标命令(仅菜单打开期间有效)
+
+// 当前仓库已隐藏的命令集合(settings.run_hidden[repo])
+function hiddenCmds() {
+  return new Set((settings.run_hidden || {})[repo] || []);
+}
+// 过滤掉隐藏命令
+function applyHidden(list) {
+  const hidden = hiddenCmds();
+  return (list || []).filter((it) => !hidden.has(it.cmd));
+}
 
 export function openRunPanel() { $("run-panel").classList.remove("closed"); syncRunToggle(); }
 export function closeRunPanel() { $("run-panel").classList.add("closed"); syncRunToggle(); }
@@ -67,7 +80,8 @@ function renderRunLog() {
   for (const ln of lines) appendRunLine(ln.cls, ln.text, true);
 }
 
-// 运行栏右侧地址:自定义地址优先,其次探测到的 Web 端口(tauri 端口是 WebView 内部资源不显示);
+// 运行栏右侧地址:自定义地址优先,其次实际占用端口,再其次项目配置推断端口;
+// 项目未运行时也显示已读取到的预期端口(tauri 端口是 WebView 内部资源不显示);
 // 点击在浏览器打开,显示形式与总览卡片一致(localhost 只显示端口);
 // 无地址时显示「无运行端口」占位(灰色只读),不隐藏
 function updateRunUrl() {
@@ -75,7 +89,10 @@ function updateRunUrl() {
   if (!el) return;
   const custom = repo ? (settings.run_urls || {})[repo] : null;
   const ports = repo ? (extRun[repo] || []).filter((p) => p.source !== "tauri") : [];
-  const u = custom || (ports.length ? "http://localhost:" + ports[0].port : null);
+  const staticPorts = repo ? (staticRunPorts[repo] || []).filter((p) => p.source !== "tauri") : [];
+  const u = custom || (ports.length ? "http://localhost:" + ports[0].port : null)
+    || (staticPorts.length ? "http://localhost:" + staticPorts[0].port : null);
+  const running = !!(repo && (runState[repo] || ports.length));
   if (!u) {
     el.textContent = "无运行端口";
     el.classList.add("dim");
@@ -84,8 +101,9 @@ function updateRunUrl() {
     return;
   }
   el.textContent = urlDisplay(u);
-  el.classList.remove("hidden", "dim");
-  el.onclick = () => invoke("open_url", { url: u });
+  el.classList.remove("hidden");
+  el.classList.toggle("dim", !running);
+  el.onclick = running ? () => invoke("open_url", { url: u }) : null;
 }
 
 // 复制当前仓库的全部运行日志;没有日志时不复制占位提示
@@ -122,7 +140,8 @@ function syncRunDots() {
 }
 
 // 平铺渲染全部识别命令 chip:空闲=▶+文本;运行中(本应用启动或外部运行)=可停止→⏹+文本 / 不可停止→▶常亮;
-// 运行中其他 chip 禁用;外部占用但无法归因到某条命令时全部禁用
+// 运行中其他 chip 禁用;外部占用但无法归因到某条命令时全部禁用;
+// 隐藏的命令收进末尾「⋯」按钮,展开后以普通 chip 展示(可运行/停止/右键)
 function renderRunCmds() {
   const wrap = $("run-cmds");
   if (!wrap) return;
@@ -130,7 +149,9 @@ function renderRunCmds() {
   updateRunUrl();
   wrap.textContent = "";
   if (!repo) return;
-  if (!runCmdOptions.length) {
+  const hidden = hiddenCmds();
+  const hasHidden = hidden.size > 0;
+  if (!runCmdOptions.length && !hasHidden) {
     const d = document.createElement("span");
     d.className = "run-cmds-empty";
     d.textContent = "未识别到运行命令";
@@ -148,6 +169,9 @@ function renderRunCmds() {
   const extCmd = !running && ext.length
     ? runCmdOptions.find((it) => hitPort(it)) || null
     : null;
+  // 端口被占用但归因不到具体命令(默认端口/tauri devUrl/custom 来源,且命令无端口信息):
+  // 点亮所有可停止且无端口信息的命令,避免全部置灰导致「外部运行中」状态不可见
+  const fallbackExt = !running && ext.length && !extCmd;
   for (const it of runCmdOptions) {
     const b = document.createElement("button");
     b.className = "run-chip";
@@ -155,8 +179,10 @@ function renderRunCmds() {
     icon.className = "run-chip-icon";
     const isActive = running && active === it.cmd;
     const extHit = extCmd === it ? hitPort(it) : null;
-    const isOn = isActive || !!extHit;
-    const canStop = (isActive && it.stoppable) || !!(extHit && extHit.pid);
+    const extFallbackOn = fallbackExt && it.stoppable && !(it.ports || []).length;
+    const isOn = isActive || !!extHit || extFallbackOn;
+    const canStop = (isActive && it.stoppable)
+      || !!((extHit && extHit.pid) || (extFallbackOn && ext.some((p) => p.pid)));
     // 可停止命令运行中→停止方块;其余→播放三角
     icon.innerHTML = isOn && canStop
       ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>'
@@ -168,6 +194,7 @@ function renderRunCmds() {
     if (isOn) {
       b.classList.add("running");
       if (isActive && !it.stoppable) b.title = `${it.cmd} 执行中，结束后自动恢复`;
+      else if (extFallbackOn) b.title = `外部运行中（端口 ${ext.map((p) => p.port).join("、")} 被占用，未能确认具体命令）`;
       else if (extHit && !extHit.pid) b.title = `外部运行中，未能确认进程归属，无法在此停止`;
       else b.title = `点击停止 ${it.cmd}` + (extHit ? "（外部运行）" : "");
     } else if (running) {
@@ -177,14 +204,32 @@ function renderRunCmds() {
       b.classList.add("disabled");
       b.title = `端口 ${ext.map((p) => p.port).join("、")} 已被占用，可能已在外部运行`;
     }
-    b.addEventListener("click", () => chipClick(it, extHit));
+    b.addEventListener("click", () => chipClick(it, extHit, extFallbackOn));
+    b.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openRunCtxMenu(e.clientX, e.clientY, it.cmd);
+    });
     wrap.appendChild(b);
+  }
+  // 末尾「⋯」按钮:存在隐藏命令时显示(无隐藏不渲染),点击弹出菜单,菜单项点击直接运行
+  if (hasHidden) {
+    const more = document.createElement("button");
+    more.className = "run-chip run-more-btn";
+    more.textContent = "⋯";
+    more.title = `${hidden.size} 条命令已隐藏，点击查看`;
+    more.addEventListener("click", (e) => {
+      e.stopPropagation(); // 阻止冒泡到 document 的全局点击收起(菜单刚打开)
+      closeRunCtxMenu();
+      const r = more.getBoundingClientRect();
+      openRunMoreMenu(r.left, r.bottom + 4);
+    });
+    wrap.appendChild(more);
   }
 }
 
 // 点击命令 chip:空闲→启动;本应用启动的运行中命令→停止(仅可停止命令);
-// 外部运行命中→确认归属则停止;其余情况给出提示
-async function chipClick(it, extHit) {
+// 外部运行命中或归因失败后点亮(fallback)→确认归属则停止;其余情况给出提示
+async function chipClick(it, extHit, extFallbackOn) {
   if (!repo || runBusy) return;
   if (runState[repo]) {
     if (runActiveCmd[repo] === it.cmd) {
@@ -195,18 +240,19 @@ async function chipClick(it, extHit) {
     }
     return;
   }
-  // 外部运行命中:端口进程与项目归属均已确认 → 停止;未确认 → 说明不可停
-  if (extHit) {
-    if (extHit.pid) {
+  const ext = extRun[repo] || [];
+  // 外部运行命中,或归因失败后点亮该 chip(fallback):端口进程与项目归属均已确认 → 停止;未确认 → 说明不可停
+  const target = extHit || (extFallbackOn ? ext[0] : null);
+  if (target) {
+    if (target.pid) {
       runBusy = true;
-      try { await stopExternalServer(repo, extHit.port, extHit.pid); }
+      try { await stopExternalServer(repo, target.port, target.pid); }
       finally { runBusy = false; }
     } else {
       toast("未能确认占用进程的归属，无法在此停止", false);
     }
     return;
   }
-  const ext = extRun[repo] || [];
   if (ext.length) {
     toast(`端口 ${ext.map((p) => p.port).join("、")} 已被占用，项目可能已在外部运行`, false);
     return;
@@ -240,11 +286,19 @@ export function syncRunPanel() {
     renderRunLog();
     return;
   }
-  // 智能识别:候选填入平铺栏
+  // 智能识别:候选填入平铺栏(隐藏的命令已过滤)
   const detectRepo = repo;
   invoke("server_detect", { repo }).then((list) => {
     if (detectRepo !== repo) return; // 已切换仓库,丢弃过期结果
-    runCmdOptions = list || [];
+    runAllCmds = list || [];
+    runCmdOptions = applyHidden(runAllCmds);
+    renderRunCmds();
+  }).catch(() => {});
+  // 静态读取项目配置端口,不依赖服务是否已经启动
+  const portRepo = repo;
+  invoke("server_ports", { repo }).then((ports) => {
+    if (portRepo !== repo) return;
+    staticRunPorts[portRepo] = ports || [];
     renderRunCmds();
   }).catch(() => {});
   renderRunLog();
@@ -306,7 +360,7 @@ export function runLastFor(path) {
   return (settings.run_last || {})[path] || 0;
 }
 
-// 供总览卡片使用:探测某仓库的全部识别候选(未缓存,每次调用拉取)
+// 供总览卡片使用:探测某仓库的全部识别候选(未缓存,每次调用拉取;隐藏仅作用于运行栏,不影响总览)
 export function detectCommandsFor(path) {
   return invoke("server_detect", { repo: path }).then((list) => list || []).catch(() => []);
 }
@@ -416,10 +470,105 @@ export async function startServer(cmd) {
   }
 }
 
+/* ===== 运行命令右键菜单(隐藏 / 恢复隐藏) ===== */
+// 在鼠标位置弹出菜单;cmd 为空时仅显示恢复项
+function openRunCtxMenu(x, y, cmd) {
+  const menu = $("run-ctx-menu");
+  if (!menu) return;
+  closeRunMoreMenu(); // 两个命令菜单互斥
+  runCtxCmd = cmd;
+  const hideBtn = $("run-ctx-hide");
+  hideBtn.classList.toggle("hidden", !cmd);
+  if (cmd) hideBtn.textContent = hiddenCmds().has(cmd) ? `取消隐藏「${cmd}」` : `隐藏「${cmd}」`;
+  const restoreBtn = $("run-ctx-restore");
+  const hidden = (settings.run_hidden || {})[repo] || [];
+  restoreBtn.classList.toggle("hidden", !hidden.length);
+  if (hideBtn.classList.contains("hidden") && restoreBtn.classList.contains("hidden")) return;
+  menu.classList.remove("hidden");
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 4)) + "px";
+  menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 4)) + "px";
+}
+export function closeRunCtxMenu() {
+  const menu = $("run-ctx-menu");
+  if (menu) menu.classList.add("hidden");
+  runCtxCmd = null;
+}
+// 弹出隐藏命令菜单(运行栏「⋯」):列出该仓库全部隐藏命令,点击某项直接运行/停止
+function openRunMoreMenu(x, y) {
+  const menu = $("run-more-menu");
+  if (!menu) return;
+  closeRunCtxMenu(); // 两个命令菜单互斥
+  const hidden = (settings.run_hidden || {})[repo] || [];
+  const items = runAllCmds.filter((it) => hidden.includes(it.cmd));
+  menu.textContent = "";
+  for (const it of items) {
+    const b = document.createElement("button");
+    const active = runActiveCmd[repo] === it.cmd;
+    // 运行中标记为 ■,空闲为 ▶(与 chip 图标语义一致)
+    b.innerHTML = active ? "■ " : "▶ ";
+    b.appendChild(document.createTextNode(it.cmd));
+    b.title = `左键${active ? "停止" : "运行"} · 右键取消隐藏`;
+    b.addEventListener("click", () => {
+      closeRunMoreMenu();
+      chipClick(it, null, false); // 复用 chip 点击逻辑:空闲→运行,运行中→停止
+    });
+    // 右键取消隐藏:菜单项都是隐藏命令,取消后回到平铺区
+    b.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      closeRunMoreMenu();
+      toggleHideCmd(it.cmd);
+    });
+    menu.appendChild(b);
+  }
+  menu.classList.remove("hidden");
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 4)) + "px";
+  menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 4)) + "px";
+}
+export function closeRunMoreMenu() {
+  const menu = $("run-more-menu");
+  if (menu) menu.classList.add("hidden");
+}
+// 切换隐藏状态(持久化 + 从完整候选重新过滤);隐藏命令收进「⋯」而非删除,可随时展开/恢复
+function toggleHideCmd(cmd) {
+  if (!repo || !cmd) return;
+  settings.run_hidden = settings.run_hidden || {};
+  const arr = (settings.run_hidden[repo] = settings.run_hidden[repo] || []);
+  const i = arr.indexOf(cmd);
+  if (i >= 0) arr.splice(i, 1);
+  else arr.push(cmd);
+  if (!arr.length) delete settings.run_hidden[repo];
+  invoke("settings_save", { settings }).catch(() => {});
+  runCmdOptions = applyHidden(runAllCmds);
+  renderRunCmds();
+}
+// 恢复当前仓库全部隐藏的命令
+function restoreCmds() {
+  if (!repo) return;
+  settings.run_hidden = settings.run_hidden || {};
+  if (settings.run_hidden[repo]) {
+    delete settings.run_hidden[repo];
+    invoke("settings_save", { settings }).catch(() => {});
+  }
+  runCmdOptions = runAllCmds.slice();
+  renderRunCmds();
+}
+
 /* ===== 事件绑定 ===== */
 export function bindRunEvents() {
   $("btn-run-collapse").addEventListener("click", toggleRunPanel);
   $("btn-run-copy").addEventListener("click", copyRunLog);
+  // 运行命令右键菜单:隐藏/取消隐藏、恢复全部(先取值再关闭,防全局 click 抢先收菜单)
+  $("run-ctx-hide").addEventListener("click", () => {
+    const cmd = runCtxCmd;
+    closeRunCtxMenu();
+    toggleHideCmd(cmd);
+  });
+  $("run-ctx-restore").addEventListener("click", () => {
+    closeRunCtxMenu();
+    restoreCmds();
+  });
 
   // 运行日志面板顶部拖拽调整高度,并持久化到设置
   const RUN_H_MIN = 120, RUN_H_MAX = 640;

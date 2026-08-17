@@ -1,4 +1,7 @@
 from pathlib import Path
+import platform
+import subprocess
+import tempfile
 
 import cv2
 import numpy as np
@@ -8,6 +11,36 @@ from PIL import Image, ImageChops, ImageFilter
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src-tauri" / "icons" / "logo-source.png"
 OUTPUT = ROOT / "src-tauri" / "icons" / "macos-icon-source.png"
+ICNS_OUTPUT = ROOT / "src-tauri" / "icons" / "icon.icns"
+
+
+def build_icns(icon: Image.Image) -> None:
+    """把带安全边距的源图生成 macOS 的多尺寸图标。"""
+    if platform.system() != "Darwin":
+        return
+
+    sizes = (16, 32, 128, 256, 512)
+    with tempfile.TemporaryDirectory(prefix="hello-gitty-iconset-") as temporary:
+        iconset = Path(temporary) / "HelloGitty.iconset"
+        iconset.mkdir()
+        for size in sizes:
+            icon.resize((size, size), Image.Resampling.LANCZOS).save(
+                iconset / f"icon_{size}x{size}.png"
+            )
+            icon.resize((size * 2, size * 2), Image.Resampling.LANCZOS).save(
+                iconset / f"icon_{size}x{size}@2x.png"
+            )
+
+        subprocess.run(
+            ["iconutil", "-c", "icns", str(iconset), "-o", str(ICNS_OUTPUT)],
+            check=True,
+        )
+
+    alpha_bbox = icon.getchannel("A").getbbox()
+    expected = (92, 92, 932, 932)
+    if alpha_bbox != expected:
+        raise RuntimeError(f"macOS 图标透明边界异常: {alpha_bbox}, 预期 {expected}")
+    print(f"generated {ICNS_OUTPUT.relative_to(ROOT)} with safe area {alpha_bbox}")
 
 
 def main() -> None:
@@ -62,6 +95,7 @@ def main() -> None:
     canvas = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
     canvas.alpha_composite(padded, ((1024 - padded.width) // 2, (1024 - padded.height) // 2))
     canvas.save(OUTPUT)
+    build_icns(canvas)
 
 
 if __name__ == "__main__":

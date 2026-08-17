@@ -5,7 +5,23 @@ import { $, invoke, toast, setButtonLoading } from "./state.js";
 
 let pendingUpdate = null; // check() 返回的更新元数据 { rid, version, currentVersion, body }
 
+// 检查最小展示时长:让加载态至少可见一帧,避免 check 立即失败时 spinner 来不及渲染
+const CHECK_MIN_MS = 500;
+
+// 把插件错误转成用户可读的中文提示
+function friendlyError(e) {
+  const msg = String(e);
+  if (/Targets?NotFound/i.test(msg) || /target not found/i.test(msg) || /fallback platforms/i.test(msg)) {
+    return "当前系统暂未发布对应的更新包（可能是首次发布或尚未适配此平台）";
+  }
+  if (/network|timeout|timed out|connect/i.test(msg)) return "网络连接失败，请检查网络后重试";
+  if (/signature|verify/i.test(msg)) return "更新文件校验失败，请稍后重试";
+  return msg;
+}
+
 async function checkForUpdate(manual) {
+  if (manual) setButtonLoading($("btn-check-update"), true, "检查中…");
+  const started = Date.now();
   try {
     const u = await invoke("plugin:updater|check");
     if (!u) {
@@ -21,7 +37,13 @@ async function checkForUpdate(manual) {
     $("dlg-update").classList.remove("hidden");
   } catch (e) {
     // 静默自动检查失败不打扰(离线/端点未就绪);手动检查才提示原因
-    if (manual) toast("检查更新失败：" + e, false);
+    if (manual) toast("检查更新失败：" + friendlyError(e), false);
+  } finally {
+    if (manual) {
+      const elapsed = Date.now() - started;
+      if (elapsed < CHECK_MIN_MS) await new Promise((r) => setTimeout(r, CHECK_MIN_MS - elapsed));
+      setButtonLoading($("btn-check-update"), false);
+    }
   }
 }
 

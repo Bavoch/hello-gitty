@@ -7,7 +7,7 @@
     "frontendDist": "../src",
     "devUrl": "http://localhost:1421",
     "beforeDevCommand": "node scripts/dev_server.mjs 1421 ./src",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "python3 scripts/create_macos_icon.py && python3 scripts/remove_icon_padding.py"
   },
   "app": {
     "withGlobalTauri": true,

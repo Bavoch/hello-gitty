@@ -18,7 +18,8 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "build:debug": "tauri build --no-bundle"
+    "build:debug": "tauri build --no-bundle",
+    "generate:icons": "python3 scripts/create_macos_icon.py && python3 scripts/remove_icon_padding.py"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

@@ -1658,6 +1658,22 @@ async fn server_ports_all(repos: Vec<String>) -> std::collections::HashMap<Strin
     .unwrap_or_default()
 }
 
+/// 当前项目的静态开发端口(项目未运行时也可读取)
+#[tauri::command]
+async fn server_ports(repo: String) -> Vec<PortInfo> {
+    tauri::async_runtime::spawn_blocking(move || {
+        runner::collect_ports(&repo)
+            .into_iter()
+            .map(|(port, source)| PortInfo {
+                port,
+                source: source.to_string(),
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
 /// 停止外部运行的进程:先确认占用端口的进程工作目录属于该仓库(防误杀),
 /// 再停止监听 PID 所属的整个进程树。pid 必须来自 server_external_check 的返回。
 #[tauri::command]
@@ -1787,6 +1803,7 @@ pub fn run() {
             ai_resolve_conflicts,
             server_detect,
             server_ports_all,
+            server_ports,
             server_start,
             server_stop,
             server_status,

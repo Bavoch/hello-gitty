@@ -107,7 +107,8 @@ export async function loadRepos() {
 export function syncSidebarVisibility() {
   const empty = repos.length === 0;
   $("sidebar").classList.toggle("hidden", empty);
-  $("run-panel").classList.toggle("hidden", empty);
+  // 首页没有当前项目,即使项目列表存在也不显示项目级运行栏
+  $("run-panel").classList.toggle("hidden", empty || view === "overview");
 }
 
 /* ===== 后台 fetch ===== */

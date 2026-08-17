@@ -40,6 +40,13 @@ if (!Object.keys(platforms).length) {
   process.exit(1);
 }
 
+const required = ["darwin-x86_64", "darwin-aarch64", "windows-x86_64"];
+const missing = required.filter((platform) => !platforms[platform]);
+if (missing.length) {
+  console.error(`缺少必需的更新平台: ${missing.join(", ")}`);
+  process.exit(1);
+}
+
 let notes = `Hello Gitty ${tag}`;
 if (notesFile) {
   try {

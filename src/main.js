@@ -7,7 +7,7 @@ import { loadRepos, fetchRemote, setupDragDrop, bindSidebarEvents, closeCtxMenu 
 import { refresh, showEmpty, bindPanelEvents } from "./js/panel.js";
 import { bindHistoryEvents } from "./js/history.js";
 import { bindGitEvents, initGitListeners } from "./js/git-ops.js";
-import { syncRunPanel, syncRunToggle, bindRunEvents, initRunListeners, refreshExternalStatus } from "./js/run-panel.js";
+import { syncRunPanel, syncRunToggle, bindRunEvents, initRunListeners, refreshExternalStatus, closeRunCtxMenu, closeRunMoreMenu } from "./js/run-panel.js";
 import { bindDashboardEvents } from "./js/dashboard.js";
 import { bindUpdateEvents, startAutoUpdateCheck } from "./js/update.js";
 
@@ -124,6 +124,8 @@ function bindGlobalDismiss() {
     $("dash-more-menu").classList.add("hidden");
     $("branch-menu").classList.add("hidden");
     closeCtxMenu();
+    closeRunCtxMenu();
+    closeRunMoreMenu();
   });
   // 总览卡片命令下拉框:点击页面任意空白处立即失焦,取消激活态
   // (WKWebView 下原生 select 点击外部不会自动失焦;捕获阶段监听,不受各控件 stopPropagation 影响)
@@ -138,7 +140,9 @@ function bindGlobalDismiss() {
       $("dash-more-menu").classList.add("hidden");
       $("diff-panel").classList.add("hidden"); // ESC 收起右侧 diff 面板
       closeCtxMenu();
+      closeRunCtxMenu();
+      closeRunMoreMenu();
     }
   });
-  window.addEventListener("scroll", closeCtxMenu, true);
+  window.addEventListener("scroll", () => { closeCtxMenu(); closeRunCtxMenu(); closeRunMoreMenu(); }, true);
 }

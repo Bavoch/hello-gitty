@@ -53,8 +53,11 @@ pub fn detect_all(repo: &str) -> Vec<DetectResult> {
         return Vec::new();
     }
     let mut out: Vec<DetectResult> = Vec::new();
-    let mut push = |cmd: String, source: String, stoppable: bool, ports: Vec<u16>| {
+    // 命令 -> 触发它的原始文本(scripts 原文等),供 default_port 推断默认端口
+    let mut origins: HashMap<String, String> = HashMap::new();
+    let mut push = |cmd: String, source: String, stoppable: bool, ports: Vec<u16>, origin: &str| {
         if !out.iter().any(|d| d.cmd == cmd) {
+            origins.insert(cmd.clone(), origin.to_string());
             out.push(DetectResult {
                 cmd,
                 source,
@@ -79,11 +82,13 @@ pub fn detect_all(repo: &str) -> Vec<DetectResult> {
                 let mut found = false;
                 for key in ["dev", "serve", "start", "preview", "watch", "run", "debug"] {
                     if scripts.contains_key(key) {
+                        let raw = scripts.get(key).and_then(|c| c.as_str()).unwrap_or("");
                         push(
                             format!("npm run {key}"),
                             format!("package.json · scripts.{key}"),
                             true,
                             ports_of(key),
+                            raw,
                         );
                         found = true;
                     }
@@ -95,6 +100,7 @@ pub fn detect_all(repo: &str) -> Vec<DetectResult> {
                         "package.json · scripts.tauri (dev)".into(),
                         true,
                         Vec::new(),
+                        "tauri",
                     );
                     found = true;
                 }
@@ -109,22 +115,26 @@ pub fn detect_all(repo: &str) -> Vec<DetectResult> {
                     .collect();
                 prefixed.sort();
                 for k in prefixed {
+                    let raw = scripts.get(k).and_then(|c| c.as_str()).unwrap_or("");
                     push(
                         format!("npm run {k}"),
                         format!("package.json · scripts.{k}"),
                         true,
                         ports_of(k),
+                        raw,
                     );
                     found = true;
                 }
                 if !found {
                     // 无运行类键时取第一个 script 兜底:大概率是 build/test 等一次性命令,跑完自退
                     if let Some(first) = scripts.keys().next() {
+                        let raw = scripts.get(first).and_then(|c| c.as_str()).unwrap_or("");
                         push(
                             format!("npm run {first}"),
                             format!("package.json · scripts.{first}"),
                             false,
                             ports_of(first),
+                            raw,
                         );
                     }
                 }
@@ -139,6 +149,7 @@ pub fn detect_all(repo: &str) -> Vec<DetectResult> {
             "manage.py".into(),
             true,
             Vec::new(),
+            "python manage.py runserver",
         );
     }
 
@@ -153,6 +164,7 @@ pub fn detect_all(repo: &str) -> Vec<DetectResult> {
             "docker-compose 文件".into(),
             true,
             Vec::new(),
+            "docker compose up",
         );
     }
 
@@ -166,33 +178,39 @@ pub fn detect_all(repo: &str) -> Vec<DetectResult> {
                     let l = l.trim_start();
                     l.starts_with(t) && l[t.len()..].trim_start().starts_with(':')
                 }) {
-                    push(format!("make {t}"), format!("Makefile · {t}"), true, Vec::new());
+                    push(
+                        format!("make {t}"),
+                        format!("Makefile · {t}"),
+                        true,
+                        Vec::new(),
+                        &format!("make {t}"),
+                    );
                     found = true;
                 }
             }
             if !found {
                 // 默认 target 多为构建,视为一次性
-                push("make".into(), "Makefile".into(), false, Vec::new());
+                push("make".into(), "Makefile".into(), false, Vec::new(), "make");
             }
         } else {
-            push("make".into(), "Makefile".into(), false, Vec::new());
+            push("make".into(), "Makefile".into(), false, Vec::new(), "make");
         }
     }
 
     // Rust
     if root.join("Cargo.toml").exists() {
-        push("cargo run".into(), "Cargo.toml".into(), true, Vec::new());
+        push("cargo run".into(), "Cargo.toml".into(), true, Vec::new(), "cargo run");
     }
 
     // Go
     if root.join("go.mod").exists() {
-        push("go run .".into(), "go.mod".into(), true, Vec::new());
+        push("go run .".into(), "go.mod".into(), true, Vec::new(), "go run .");
     }
 
     // Node 入口
     for entry in ["index.js", "app.js", "server.js"] {
         if root.join(entry).exists() {
-            push("node .".into(), entry.into(), true, Vec::new());
+            push("node .".into(), entry.into(), true, Vec::new(), "node .");
             break;
         }
     }
@@ -209,6 +227,38 @@ pub fn detect_all(repo: &str) -> Vec<DetectResult> {
                 }
             }
             break;
+        }
+    }
+
+    // 框架默认端口兜底归因:与 collect_ports 的 default 来源对齐。
+    // 缺这条时,靠默认端口(如 vite 5173)跑起来的项目外部运行无法归因到命令,
+    // 多命令候选项目会把所有命令 chip 置灰且不显示运行中(实测 framekit: dev="vite" 无 --port)
+    for d in out.iter_mut() {
+        if d.stoppable && d.ports.is_empty() {
+            if let Some(p) = origins.get(&d.cmd).and_then(|o| default_port(o, root)) {
+                d.ports.push(p);
+            }
+        }
+    }
+
+    // tauri devUrl 端口归因:桌面应用 WebView 内部资源端口(collect_ports 的 tauri 来源)。
+    // 归因给调用 tauri CLI 的命令(scripts.tauri 惯例,或 dev 脚本以 tauri dev 开头),
+    // 否则多命令项目外部跑 tauri dev 时,探测到 devUrl 端口占用却归因失败(全部置灰)
+    for conf in ["tauri.conf.json", "src-tauri/tauri.conf.json"] {
+        if let Ok(text) = std::fs::read_to_string(root.join(conf)) {
+            if let Some(p) = extract_url_port(&text) {
+                if let Some(cmd) = out.iter_mut().find(|d| {
+                    d.stoppable
+                        && d.ports.is_empty()
+                        && origins
+                            .get(&d.cmd)
+                            .map(|o| o.contains("tauri"))
+                            .unwrap_or(false)
+                }) {
+                    cmd.ports.push(p);
+                }
+                break;
+            }
         }
     }
 
@@ -1040,6 +1090,76 @@ mod tests {
         let r = detect_all(d.to_str().unwrap());
         let cmds: Vec<_> = r.iter().map(|x| x.cmd.as_str()).collect();
         assert_eq!(cmds, ["npm run dev:web", "npm run start:api"]); // 前缀键按名排序
+        fs::remove_dir_all(&d).ok();
+    }
+
+    // 复现外部运行归因失败 bug 场景:dev="vite" 无显式 --port、无 vite.config server.port,
+    // 多命令候选。此时外部以默认端口 5173 运行,若命令不归因默认端口,
+    // 前端无法点亮任何 chip(全部置灰)。
+    #[test]
+    fn detect_all_vite_default_port() {
+        let d = tmpdir("vitedefault");
+        fs::write(
+            d.join("package.json"),
+            r#"{"scripts":{"dev":"vite","build":"vite build","preview":"vite preview"}}"#,
+        )
+        .unwrap();
+        let r = detect_all(d.to_str().unwrap());
+        let dev = r.iter().find(|x| x.cmd == "npm run dev").unwrap();
+        let preview = r.iter().find(|x| x.cmd == "npm run preview").unwrap();
+        assert!(dev.ports.contains(&5173), "dev 命令应归因 vite 默认端口,实际 {:?}", dev.ports);
+        assert!(
+            preview.ports.contains(&5173),
+            "preview 命令应归因 vite 默认端口,实际 {:?}",
+            preview.ports
+        );
+        fs::remove_dir_all(&d).ok();
+    }
+
+    // dev 脚本直接调 tauri dev(无 scripts.tauri 键):devUrl 端口必须归因到 dev 命令,
+    // 否则多命令项目外部跑 tauri dev 时探测到 devUrl 端口占用却归因失败
+    #[test]
+    fn detect_all_tauri_devurl_dev_script() {
+        let d = tmpdir("tauridevurl");
+        fs::create_dir_all(d.join("src-tauri")).unwrap();
+        fs::write(d.join("package.json"), r#"{"scripts":{"dev":"tauri dev"}}"#).unwrap();
+        fs::write(
+            d.join("src-tauri/tauri.conf.json"),
+            r#"{"devUrl":"http://localhost:1421"}"#,
+        )
+        .unwrap();
+        let r = detect_all(d.to_str().unwrap());
+        assert_eq!(r.len(), 1);
+        assert!(
+            r[0].ports.contains(&1421),
+            "dev 命令应归因 devUrl 端口,实际 {:?}",
+            r[0].ports
+        );
+        fs::remove_dir_all(&d).ok();
+    }
+
+    // scripts.tauri 惯例:devUrl 端口归因给 npm run tauri dev
+    #[test]
+    fn detect_all_tauri_devurl_tauri_key() {
+        let d = tmpdir("taurikey");
+        fs::create_dir_all(d.join("src-tauri")).unwrap();
+        fs::write(
+            d.join("package.json"),
+            r#"{"scripts":{"dev":"vite --port 1420","tauri":"tauri"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            d.join("src-tauri/tauri.conf.json"),
+            r#"{"devUrl":"http://localhost:1421"}"#,
+        )
+        .unwrap();
+        let r = detect_all(d.to_str().unwrap());
+        let tauri_dev = r.iter().find(|x| x.cmd == "npm run tauri dev").unwrap();
+        assert!(
+            tauri_dev.ports.contains(&1421),
+            "tauri dev 命令应归因 devUrl 端口,实际 {:?}",
+            tauri_dev.ports
+        );
         fs::remove_dir_all(&d).ok();
     }
 
