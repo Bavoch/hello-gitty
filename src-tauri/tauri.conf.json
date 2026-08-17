@@ -28,7 +28,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM5QTM5OEJEMENFQTVCNUMKUldSY1crb012WmlqT1E5WUwrR2tVWFV5M0RVQW1yYjVsUzZvN21YVGJkV2ltYnpZVldXaGdSWHMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4OUNCNTQxNEJFNEEyOTgKUldTWW91UkxRYldjV0ZzRXBQTlg5aHloSHd4aFdiY1MrUkErZjVWL1lMcm1hbWJEVnhHdnFzQ2wK",
       "endpoints": [
         "https://github.com/Bavoch/hello-gitty/releases/latest/download/latest.json"
       ],
