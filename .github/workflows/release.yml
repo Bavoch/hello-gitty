@@ -52,8 +52,8 @@ jobs:
 
       - name: Name Intel updater artifacts
         run: |
-          mv src-tauri/target/release/bundle/macos/Hello.Gitty.app.tar.gz src-tauri/target/release/bundle/macos/Hello.Gitty_x64.app.tar.gz
-          mv src-tauri/target/release/bundle/macos/Hello.Gitty.app.tar.gz.sig src-tauri/target/release/bundle/macos/Hello.Gitty_x64.app.tar.gz.sig
+          mv "src-tauri/target/release/bundle/macos/Hello Gitty.app.tar.gz" src-tauri/target/release/bundle/macos/Hello.Gitty_x64.app.tar.gz
+          mv "src-tauri/target/release/bundle/macos/Hello Gitty.app.tar.gz.sig" src-tauri/target/release/bundle/macos/Hello.Gitty_x64.app.tar.gz.sig
 
       - name: Upload dmg to release
         env:
@@ -100,8 +100,8 @@ jobs:
 
       - name: Name Apple Silicon updater artifacts
         run: |
-          mv src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty.app.tar.gz src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty_aarch64.app.tar.gz
-          mv src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty.app.tar.gz.sig src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty_aarch64.app.tar.gz.sig
+          mv "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello Gitty.app.tar.gz" src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty_aarch64.app.tar.gz
+          mv "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello Gitty.app.tar.gz.sig" src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty_aarch64.app.tar.gz.sig
 
       - name: Upload Apple Silicon dmg
         env:
