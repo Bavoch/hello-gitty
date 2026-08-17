@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/favicon.png" alt="Hello Gitty" width="120" />
+  <img src="https://raw.githubusercontent.com/Bavoch/hello-gitty/main/src/favicon.png" alt="Hello Gitty" width="120" />
 </p>
 
 # Hello Gitty 🐱
