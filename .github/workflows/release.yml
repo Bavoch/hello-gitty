@@ -50,14 +50,19 @@ jobs:
         # dmg 不在 updater 支持的目标里,须同时构建 app 目标才会产出 .app.tar.gz 与签名
         run: npx tauri build --bundles app,dmg
 
+      - name: Name Intel updater artifacts
+        run: |
+          mv src-tauri/target/release/bundle/macos/Hello.Gitty.app.tar.gz src-tauri/target/release/bundle/macos/Hello.Gitty_x64.app.tar.gz
+          mv src-tauri/target/release/bundle/macos/Hello.Gitty.app.tar.gz.sig src-tauri/target/release/bundle/macos/Hello.Gitty_x64.app.tar.gz.sig
+
       - name: Upload dmg to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release upload "$GITHUB_REF_NAME"
           src-tauri/target/release/bundle/dmg/*.dmg
-          src-tauri/target/release/bundle/macos/*.app.tar.gz
-          src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+          src-tauri/target/release/bundle/macos/Hello.Gitty_x64.app.tar.gz
+          src-tauri/target/release/bundle/macos/Hello.Gitty_x64.app.tar.gz.sig
           --clobber
 
   build-macos-arm:
@@ -93,14 +98,19 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target aarch64-apple-darwin --bundles app,dmg
 
+      - name: Name Apple Silicon updater artifacts
+        run: |
+          mv src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty.app.tar.gz src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty_aarch64.app.tar.gz
+          mv src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty.app.tar.gz.sig src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty_aarch64.app.tar.gz.sig
+
       - name: Upload Apple Silicon dmg
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release upload "$GITHUB_REF_NAME"
           src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-          src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
-          src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty_aarch64.app.tar.gz
+          src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Hello.Gitty_aarch64.app.tar.gz.sig
           --clobber
 
   build-windows:
