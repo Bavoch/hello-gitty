@@ -41,12 +41,20 @@ jobs:
         run: npm ci
 
       - name: Build dmg
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --bundles dmg
 
       - name: Upload dmg to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/release/bundle/dmg/*.dmg --clobber
+        run: >
+          gh release upload "$GITHUB_REF_NAME"
+          src-tauri/target/release/bundle/dmg/*.dmg
+          src-tauri/target/release/bundle/macos/*.app.tar.gz
+          src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+          --clobber
 
   build-windows:
     needs: create-release
@@ -70,6 +78,9 @@ jobs:
         run: npm ci
 
       - name: Build NSIS installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --bundles nsis
 
       - name: Upload installer to release
@@ -78,8 +89,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          $setup = Resolve-Path "src-tauri/target/release/bundle/nsis/*-setup.exe"
-          gh release upload "$env:TAG" "$setup" --clobber
+          $files = @()
+          $files += (Resolve-Path "src-tauri/target/release/bundle/nsis/*-setup.exe").Path
+          $files += (Resolve-Path "src-tauri/target/release/bundle/nsis/*-setup.exe.sig").Path
+          gh release upload "$env:TAG" $files --clobber
 
   publish-release:
     needs: [build-macos, build-windows]
@@ -87,6 +100,21 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 汇总两个平台的更新签名,生成 updater 端点的 latest.json 一并挂到 Release
+      - name: Generate update manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir sigs
+          gh release download "$GITHUB_REF_NAME" --pattern "*.sig" --dir sigs
+          gh release view "$GITHUB_REF_NAME" --json body -q .body > release-notes.md || true
+          node scripts/release_manifest.mjs "$GITHUB_REF_NAME" "Bavoch/hello-gitty" sigs latest.json release-notes.md
+          gh release upload "$GITHUB_REF_NAME" latest.json --clobber
 
       - name: Publish release
         env:

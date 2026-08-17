@@ -676,6 +676,12 @@ body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none
 .settings-tab { display: flex; flex-direction: column; gap: 12px; }
 .settings-dialog .dlg-actions { padding: 12px 18px; border-top: 1px solid var(--border); flex: none; }
 .dlg-hint { font-size: 13px; color: var(--text-dim); }
+/* 更新弹窗说明区:纯文本展示发布说明,超高滚动 */
+.update-notes {
+  max-height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+  border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px;
+  font-size: 12.5px; line-height: 1.6; color: var(--text-dim);
+}
 #gitignore-content { width: 100%; min-height: 320px; resize: vertical; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
 /* 忽略弹窗选项:明确列表样式(边框容器 + 分隔线 + 整行可选,规则值右对齐) */
 .ignore-options {

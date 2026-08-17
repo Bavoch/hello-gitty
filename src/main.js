@@ -9,6 +9,7 @@ import { bindHistoryEvents } from "./js/history.js";
 import { bindGitEvents, initGitListeners } from "./js/git-ops.js";
 import { syncRunPanel, syncRunToggle, bindRunEvents, initRunListeners, refreshExternalStatus } from "./js/run-panel.js";
 import { bindDashboardEvents } from "./js/dashboard.js";
+import { bindUpdateEvents, startAutoUpdateCheck } from "./js/update.js";
 
 const SIDEBAR_COMPACT_MAX = 96; // 简洁展示的宽度上限(含);与 sidebar.js 保持一致
 
@@ -43,6 +44,7 @@ async function init() {
   bindRunEvents();
   bindDashboardEvents();
   bindDialogEvents();
+  bindUpdateEvents();
   bindGlobalDismiss();
 
   initGitListeners();
@@ -64,6 +66,7 @@ async function init() {
   setInterval(fetchRemote, 60_000);
   // 定期重查外部运行态:在别处启动/停止项目后,按钮状态自动跟随(端口探测开销极小)
   setInterval(refreshExternalStatus, 30_000);
+  startAutoUpdateCheck(); // 启动稍后静默检查应用更新,有新版本才弹窗
 }
 
 /* ===== 设置 ===== */

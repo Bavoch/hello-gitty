@@ -356,6 +356,7 @@
         <div class="settings-nav">
           <button class="settings-nav-item active" data-tab="ai">AI 模型配置</button>
           <button class="settings-nav-item" data-tab="commit">提交推送配置</button>
+          <button class="settings-nav-item" data-tab="about">关于与更新</button>
         </div>
         <div class="settings-body">
           <div class="settings-tab" data-tab="ai">
@@ -385,12 +386,37 @@
               <textarea id="set-custom-prompt" rows="4" placeholder="补充说明提交偏好，例如使用英文评论"></textarea>
             </label>
           </div>
+          <div class="settings-tab hidden" data-tab="about">
+            <label class="field">
+              <span>当前版本</span>
+              <input id="set-app-version" type="text" readonly />
+            </label>
+            <div class="field">
+              <span>应用更新</span>
+              <button class="tool-btn primary" id="btn-check-update">检查更新</button>
+            </div>
+            <p class="dlg-hint">启动时会自动检查新版本；也可以随时手动检查。</p>
+          </div>
         </div>
       </div>
       <div class="dlg-actions">
         <span class="spacer"></span>
         <button class="tool-btn" id="btn-settings-cancel">取消</button>
         <button class="tool-btn primary" id="btn-settings-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 应用更新(检查到新版本时弹出) -->
+  <div class="overlay hidden" id="dlg-update">
+    <div class="dialog">
+      <h3>发现新版本 <span id="update-new-version" class="mono"></span></h3>
+      <p class="dlg-hint" id="update-current-line"></p>
+      <div id="update-notes" class="update-notes"></div>
+      <div class="dlg-actions">
+        <button class="tool-btn" id="btn-update-cancel">暂不更新</button>
+        <span class="spacer"></span>
+        <button class="tool-btn primary" id="btn-update-install">下载并安装</button>
       </div>
     </div>
   </div>

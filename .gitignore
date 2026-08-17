@@ -18,3 +18,6 @@ __pycache__/
 .reasonix/
 *.log
 .playwright-cli/
+
+# Tauri updater 签名私钥(仅本地/CI secrets,绝不入库)
+.tauri/
