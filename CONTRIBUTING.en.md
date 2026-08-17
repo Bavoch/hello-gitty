@@ -12,7 +12,7 @@ Thanks for contributing to Hello Gitty! Please take a few minutes to read this g
 
 ```bash
 npm ci
-npm run dev    # development mode
+npm run dev    # development mode (auto-reloads on save)
 npm run build  # native installer for the current OS: macOS .dmg / Windows NSIS setup.exe
 ```
 

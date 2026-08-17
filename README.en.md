@@ -57,7 +57,7 @@ Requires [Node.js](https://nodejs.org/) 18+ and [Rust](https://www.rust-lang.org
 git clone https://github.com/Bavoch/hello-gitty.git
 cd hello-gitty
 npm ci
-npm run dev      # development mode
+npm run dev      # development mode (auto-reloads on save)
 npm run build    # macOS: .dmg; Windows: NSIS setup.exe
 ```
 

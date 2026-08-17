@@ -187,9 +187,15 @@ async function streamCommitMessage(p) {
     p.busy = false;
   }
   if (p.cancelled) return;
-  // 生成完成:若已切到其他项目,不弹面板,保留 ready 态等切回时由 syncCommitPop 恢复
-  if (repo === repoPath) showCommitResult(p, msg);
-  else { p.state = "ready"; p.msg = msg; }
+  // 已切到其他项目:不弹面板也不自动提交,保留 ready 态等切回时由 syncCommitPop 恢复
+  if (repo !== repoPath) { p.state = "ready"; p.msg = msg; return; }
+  // 直接提交模式:生成完即提交,不弹确认面板;AI 未返回内容时仍落回面板手填
+  // (commitWithMessage 对空消息只 toast 不复位状态,不能让按钮卡在加载态)
+  if ((settings.ai.commit_mode || "auto") === "auto" && msg.trim()) {
+    await commitWithMessage(msg);
+    return;
+  }
+  showCommitResult(p, msg, msg.trim() ? undefined : "AI 未返回内容，可手动填写后提交");
 }
 
 // 取消/关闭:流式中软取消(后端继续、前端忽略),否则直接关

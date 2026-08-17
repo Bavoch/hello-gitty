@@ -12,7 +12,7 @@
 
 ```bash
 npm ci
-npm run dev    # 开发模式
+npm run dev    # 开发模式（保存后窗口自动重载）
 npm run build  # 当前系统原生安装包：macOS .dmg / Windows NSIS setup.exe
 ```
 

@@ -57,7 +57,7 @@ Hello Gitty 是一款专为单人 AI 开发者打造的 Git 管理工具。
 git clone https://github.com/Bavoch/hello-gitty.git
 cd hello-gitty
 npm ci
-npm run dev      # 开发模式
+npm run dev      # 开发模式（保存后窗口自动重载）
 npm run build    # macOS 输出 .dmg；Windows 输出 NSIS setup.exe
 ```
 
