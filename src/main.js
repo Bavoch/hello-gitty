@@ -36,6 +36,8 @@ async function init() {
   $("sidebar").style.width = sbw + "px";
   // 恢复右侧 diff 面板宽度(拖拽调整过则用记忆值)
   if (settings.diff_width) $("diff-panel").style.width = settings.diff_width + "px";
+  // 恢复运行日志面板高度(拖拽调整过则用记忆值)
+  if (settings.run_height) $("run-panel").style.setProperty("--run-panel-height", settings.run_height + "px");
 
   bindSidebarEvents();
   bindPanelEvents();

@@ -52,6 +52,9 @@ pub struct Settings {
     /// 右侧 diff 面板宽度(px),拖拽调整后持久化
     #[serde(default)]
     pub diff_width: Option<f64>,
+    /// 底部运行日志面板高度(px),拖拽调整后持久化
+    #[serde(default)]
+    pub run_height: Option<f64>,
 }
 
 pub struct SettingsStore {

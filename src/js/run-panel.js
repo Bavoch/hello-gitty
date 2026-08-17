@@ -88,6 +88,34 @@ function updateRunUrl() {
   el.onclick = () => invoke("open_url", { url: u });
 }
 
+// 复制当前仓库的全部运行日志;没有日志时不复制占位提示
+async function copyRunLog() {
+  const lines = (repo && runLogs[repo]) || [];
+  if (!lines.length) { toast("暂无运行日志", false); return; }
+  const text = lines.map((ln) => ln.text).join("\n");
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const input = document.createElement("textarea");
+      input.value = text;
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      try {
+        input.focus();
+        input.select();
+        if (!document.execCommand("copy")) throw new Error("copy failed");
+      } finally {
+        input.remove();
+      }
+    }
+    toast("日志已复制", true);
+  } catch (_) {
+    toast("复制日志失败", false);
+  }
+}
+
 // 运行态变化后同步侧栏「运行中」绿点(动态 import 断开与 sidebar 的循环依赖)
 function syncRunDots() {
   import("./sidebar.js").then(({ updateRepoRunDots }) => updateRepoRunDots()).catch(() => {});
@@ -391,6 +419,35 @@ export async function startServer(cmd) {
 /* ===== 事件绑定 ===== */
 export function bindRunEvents() {
   $("btn-run-collapse").addEventListener("click", toggleRunPanel);
+  $("btn-run-copy").addEventListener("click", copyRunLog);
+
+  // 运行日志面板顶部拖拽调整高度,并持久化到设置
+  const RUN_H_MIN = 120, RUN_H_MAX = 640;
+  let runDragStartY = 0, runDragStartH = 0;
+  const onRunDrag = (e) => {
+    const viewportMax = Math.max(RUN_H_MIN, window.innerHeight - 80);
+    const max = Math.min(RUN_H_MAX, viewportMax);
+    const h = Math.min(max, Math.max(RUN_H_MIN, runDragStartH + runDragStartY - e.clientY));
+    $("run-panel").style.setProperty("--run-panel-height", h + "px");
+  };
+  const endRunDrag = () => {
+    document.body.classList.remove("resizing-vertical");
+    document.removeEventListener("pointermove", onRunDrag);
+    const h = Math.round($("run-panel").getBoundingClientRect().height);
+    if (Number.isFinite(h)) {
+      settings.run_height = h;
+      invoke("settings_save", { settings }).catch(() => {});
+    }
+  };
+  $("run-resizer").addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const panel = $("run-panel");
+    runDragStartY = e.clientY;
+    runDragStartH = panel.getBoundingClientRect().height;
+    document.body.classList.add("resizing-vertical");
+    document.addEventListener("pointermove", onRunDrag);
+    document.addEventListener("pointerup", endRunDrag, { once: true });
+  });
 }
 
 /* ===== 后端事件监听 ===== */
