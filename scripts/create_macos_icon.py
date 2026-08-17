@@ -3,8 +3,6 @@ import platform
 import subprocess
 import tempfile
 
-import cv2
-import numpy as np
 from PIL import Image, ImageChops, ImageFilter
 
 
@@ -44,6 +42,12 @@ def build_icns(icon: Image.Image) -> None:
 
 
 def main() -> None:
+    if platform.system() != "Darwin":
+        return
+
+    import cv2
+    import numpy as np
+
     rgb = np.array(Image.open(SOURCE).convert("RGB"))
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
 
