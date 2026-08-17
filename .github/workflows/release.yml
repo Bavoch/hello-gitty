@@ -44,7 +44,8 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx tauri build --bundles dmg
+        # dmg 不在 updater 支持的目标里,须同时构建 app 目标才会产出 .app.tar.gz 与签名
+        run: npx tauri build --bundles app,dmg
 
       - name: Upload dmg to release
         env:
