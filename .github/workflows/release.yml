@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Use GitHub crates registry
+        run: rm -f src-tauri/.cargo/config.toml
+
       - name: Build dmg
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -81,6 +84,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Use GitHub crates registry
+        run: rm -f src-tauri/.cargo/config.toml
+
       - name: Build Apple Silicon dmg
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -119,6 +125,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Use GitHub crates registry
+        shell: pwsh
+        run: Remove-Item -Force src-tauri/.cargo/config.toml
 
       - name: Build NSIS installer
         env:
