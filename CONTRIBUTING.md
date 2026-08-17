@@ -42,6 +42,12 @@ npm run build  # 当前系统原生安装包：macOS .dmg / Windows NSIS setup.e
 - `TAURI_SIGNING_PRIVATE_KEY`：`.tauri/updater.key` 的完整内容（密钥不入库，妥善备份；**丢失后已发布版本将无法收到更新**）
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：生成密钥时的密码（本仓库密钥无密码，设为空字符串）
 
+私钥备份在本机 macOS 钥匙串（服务名 `hello-gitty`，账户 `updater-signing-key`），`.tauri/` 目录不慎丢失时可找回：
+
+```bash
+security find-generic-password -s hello-gitty -a updater-signing-key -w > .tauri/updater.key
+```
+
 ## 协议
 
 提交代码即表示你同意以 [MIT 协议](LICENSE) 授权你的贡献。

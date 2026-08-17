@@ -42,6 +42,12 @@ Push a `v*` tag to trigger the Release workflow, which builds the macOS/Windows 
 - `TAURI_SIGNING_PRIVATE_KEY`: full contents of `.tauri/updater.key` (the key never enters the repo; back it up — **if lost, already-released versions can no longer receive updates**)
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: the key passphrase (this repo's key has none; set it to an empty string)
 
+The private key is also backed up in this machine's macOS Keychain (service `hello-gitty`, account `updater-signing-key`); if the `.tauri/` directory is ever lost, recover it with:
+
+```bash
+security find-generic-password -s hello-gitty -a updater-signing-key -w > .tauri/updater.key
+```
+
 ## License
 
 By submitting code, you agree to license your contribution under the [MIT License](LICENSE).
