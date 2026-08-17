@@ -33,10 +33,6 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
       - name: Install dependencies
         run: npm ci
 
@@ -73,10 +69,6 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
       - name: Install dependencies
         run: npm ci
 
@@ -109,10 +101,6 @@ jobs:
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
 
       - name: Install dependencies
         run: npm ci
