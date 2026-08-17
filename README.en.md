@@ -38,6 +38,7 @@ So I built Hello Gitty: a lightweight, standalone companion focused on Git manag
 | History timeline | Combined local + remote commits; reset to any historical version with a confirmation dialog |
 | Branches | Switch branches; remote branches automatically get local tracking branches |
 | Run panel | Scans and detects launch commands and ports (npm/django/make/cargo/go…), start/stop inside the app, line-by-line logs, external-run detection and safe shutdown |
+| In-app updates | Checks for new versions on startup (or manually in Settings → About & Update); download and install in one step, with signature verification |
 | Window | Always-on-top toggle to stay visible while coding; closing hides to the system tray |
 
 ## Installation
@@ -48,6 +49,8 @@ Go to [Releases](https://github.com/Bavoch/hello-gitty/releases) to download a p
 
 - macOS: `.dmg`
 - Windows 10/11 (x64): `-setup.exe`
+
+Once installed, the app checks for updates on startup; you can also check manually under Settings → About & Update and download & install without leaving the app.
 
 ### Build from source
 

@@ -35,6 +35,13 @@ npm run build  # 当前系统原生安装包：macOS .dmg / Windows NSIS setup.e
 - Rust 后端沿用现有模块划分（`git.rs` / `ai.rs` / `runner.rs` / `process.rs` / `config.rs` / `lib.rs`）。
 - 注释只解释「为什么」，不解释「是什么/怎么做」。
 
+## 发布（维护者）
+
+推送 `v*` tag 触发 Release 工作流，自动构建 macOS/Windows 安装包并生成应用内更新所需的 `latest.json`。构建时用仓库 Secrets 中的更新签名私钥签名：
+
+- `TAURI_SIGNING_PRIVATE_KEY`：`.tauri/updater.key` 的完整内容（密钥不入库，妥善备份；**丢失后已发布版本将无法收到更新**）
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：生成密钥时的密码（本仓库密钥无密码，设为空字符串）
+
 ## 协议
 
 提交代码即表示你同意以 [MIT 协议](LICENSE) 授权你的贡献。
