@@ -68,7 +68,8 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build NSIS installer
-        run: npm run build
+        # 测试构建禁用更新器产物:签名私钥仅注入 Release 工作流,fork PR 也无需 secrets
+        run: npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Test installer lifecycle
         shell: pwsh
