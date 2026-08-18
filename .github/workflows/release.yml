@@ -179,6 +179,19 @@ jobs:
           node scripts/release_manifest.mjs "$GITHUB_REF_NAME" "Bavoch/hello-gitty" sigs latest.json release-notes.md
           gh release upload "$GITHUB_REF_NAME" latest.json --clobber
 
+      # .sig 的内容已经写入 latest.json,无需作为面向用户的 Release 资产展示。
+      # 删除前已完成清单生成,不会影响 Tauri updater 的签名校验。
+      - name: Remove technical signature assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t signature_assets < <(
+            gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name | select(endswith(".sig"))'
+          )
+          for asset in "${signature_assets[@]}"; do
+            gh release delete-asset "$GITHUB_REF_NAME" "$asset" --yes
+          done
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
