@@ -10,6 +10,8 @@ import { bindGitEvents, initGitListeners } from "./js/git-ops.js";
 import { syncRunPanel, syncRunToggle, bindRunEvents, initRunListeners, refreshExternalStatus, closeRunCtxMenu, closeRunMoreMenu } from "./js/run-panel.js";
 import { bindDashboardEvents } from "./js/dashboard.js";
 import { bindUpdateEvents, startAutoUpdateCheck } from "./js/update.js";
+import { bindRepoFileWatcher } from "./js/file-watcher.js";
+import { applyUiScale } from "./js/ui-scale.js";
 
 const SIDEBAR_COMPACT_MAX = 96; // 简洁展示的宽度上限(含);与 sidebar.js 保持一致
 
@@ -21,6 +23,7 @@ async function init() {
     settings.ai = { ...DEFAULT_AI, ...settings.ai }; // 兼容旧配置,补齐新字段
     settings.repos = settings.repos || [];
   } catch (_) { settings.repos = []; }
+  applyUiScale();
   // 旧配置迁移:last_repo 不在列表时补进列表
   if (settings.last_repo && !settings.repos.includes(settings.last_repo)) {
     settings.repos.push(settings.last_repo);
@@ -47,6 +50,7 @@ async function init() {
   bindDashboardEvents();
   bindDialogEvents();
   bindUpdateEvents();
+  await bindRepoFileWatcher();
   bindGlobalDismiss();
 
   initGitListeners();

@@ -3,6 +3,7 @@ mod config;
 mod git;
 mod process;
 mod runner;
+mod watcher;
 
 use ai::{AiConfig, ConflictOutcome};
 use config::{Settings, SettingsStore};
@@ -1755,6 +1756,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(runner::RunRegistry::default())
+        .manage(watcher::RepoWatcherState::default())
         .invoke_handler(tauri::generate_handler![
             settings_load,
             settings_save,
@@ -1793,6 +1795,7 @@ pub fn run() {
             git_finish_merge,
             git_history,
             git_refresh,
+            watcher::repo_watch_start,
             git_reset_hard,
             git_branches,
             git_checkout,

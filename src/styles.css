@@ -90,6 +90,7 @@
   --shadow-strong: #000000aa;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", "Microsoft YaHei", monospace;
   --bar-h: 38px; /* 底部操作栏统一高度(左侧设置栏 / 右侧运行栏) */
+  --ui-scale: 1;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -107,6 +108,7 @@ body {
   color: var(--text);
   font: 14px/1.5 -apple-system, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   overflow: hidden;
+  zoom: var(--ui-scale);
   /* WebKit(WKWebView)只认 -webkit- 前缀,须两者都写禁选才生效 */
   user-select: none; -webkit-user-select: none;
 }

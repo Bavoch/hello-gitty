@@ -3,6 +3,7 @@
 import { $, invoke, toast, setButtonLoading, repoAvatarColor, settings, repos, repo, view, setRepos, setRepo, setNumBadge } from "./state.js";
 import { refresh, showRefreshing } from "./panel.js";
 import { syncRunPanel, runningRepos } from "./run-panel.js";
+import { syncRepoFileWatcher } from "./file-watcher.js";
 
 const SIDEBAR_MIN = 48, SIDEBAR_MAX = 420; // 侧栏拖拽宽度范围
 const SIDEBAR_COMPACT_MAX = 96; // 简洁展示的宽度上限(含);更宽自动切全面展示
@@ -46,6 +47,7 @@ export async function addRepoByPath(dir) {
   try { await invoke("repos_set_current", { path: result.path }); } catch (_) {}
   await loadRepos();
   await refresh();
+  await syncRepoFileWatcher();
   syncRunPanel(); // 运行栏回填新项目的命令/日志(与 switchRepo 一致,添加也是一次切换)
   fetchRemote(); // 新添加的项目后台核对一次远程状态
 }
@@ -85,6 +87,7 @@ export async function doClone() {
     try { await invoke("repos_set_current", { path: result.path }); } catch (_) {}
     await loadRepos();
     await refresh();
+    await syncRepoFileWatcher();
     syncRunPanel(); // 运行栏回填新项目的命令/日志(与 switchRepo 一致,克隆也是一次切换)
     toast("克隆成功", true);
     fetchRemote(); // 克隆后核对远程跟踪分支,徽标立即可用
@@ -140,6 +143,7 @@ export async function switchRepo(path) {
   updateSidebarActive(path); // 只切高亮与滚动,不重建列表(重建会让全部状态行闪烁)
   showRefreshing();
   await refresh();
+  await syncRepoFileWatcher();
   fetchRemote(); // 切到新仓库后台核对远程状态
   syncRunPanel(); // 切到新仓库:回填其运行命令、刷新日志与运行态
   // 提交面板跟随项目:切走隐藏,切回恢复(动态 import 断开与 git-ops 的循环依赖)
@@ -152,6 +156,7 @@ export async function removeRepo(path) {
   if (repo === path) {
     setRepo(settings.repos[0] || null);
     settings.last_repo = repo;
+    await syncRepoFileWatcher();
   }
   await loadRepos(); // 总览视图下:列表与总览行已同步更新,主区保持总览不动
   if (view === "overview") return;

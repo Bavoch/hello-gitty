@@ -1,6 +1,6 @@
 {
   "name": "hello-gitty",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "轻量桌面 Git 管理工具，为单人 AI 开发者定制",
   "license": "MIT",
   "author": "Bavoch",
