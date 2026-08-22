@@ -22,6 +22,14 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install icon tooling
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python -m pip install pillow
+          "$env:GITHUB_WORKSPACE\.venv\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "PYTHONPATH=$env:GITHUB_WORKSPACE\.venv\Lib\site-packages" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
